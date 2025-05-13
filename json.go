@@ -32,7 +32,7 @@ func (r *JSONResolver) Resolve(value string) (string, error) {
 		return strings.TrimSpace(string(data)), nil
 	}
 
-	var content map[string]interface{}
+	var content map[string]any
 	if err := json.Unmarshal(data, &content); err != nil {
 		return "", fmt.Errorf("failed to parse JSON in '%s': %w", filePath, err)
 	}

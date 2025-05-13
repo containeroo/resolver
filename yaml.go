@@ -22,12 +22,12 @@ func (r *YAMLResolver) Resolve(value string) (string, error) {
 		return "", fmt.Errorf("failed to read YAML file '%s': %w", filePath, err)
 	}
 
-	var content interface{}
+	var content any
 	if err := yaml.Unmarshal(data, &content); err != nil {
 		return "", fmt.Errorf("failed to parse YAML in '%s': %w", filePath, err)
 	}
 
-	// Convert YAML to map[string]interface{} if needed
+	// Convert YAML to map[string]any if needed
 	contentMap, err := convertToMapStringInterface(content)
 	if err != nil {
 		return "", fmt.Errorf("failed to process YAML '%s': %w", filePath, err)

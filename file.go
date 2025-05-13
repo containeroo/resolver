@@ -8,9 +8,15 @@ import (
 	"strings"
 )
 
-// Resolves values from key = values files. The format can be:
-// "file:/config/app.txt//Key"
-// If no key is provided, returns the whole file.
+// Resolves a value by reading a key from a plain key=value text file.
+// The value after the prefix should be in the format "path/to/file.txt//Key"
+// If no key is provided, returns the entire file as a string.
+// Example:
+// "file:/config/app.txt//USERNAME"
+// would search for a line like "USERNAME = alice" and return "alice".
+//
+// Lines are matched by exact key name before the equals sign.
+// If no key is provided (no "//" present), returns the entire file as string.
 type KeyValueFileResolver struct{}
 
 func (f *KeyValueFileResolver) Resolve(value string) (string, error) {

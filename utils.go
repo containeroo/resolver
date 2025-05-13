@@ -28,11 +28,11 @@ func splitFileAndKey(value string) (string, string) {
 //   - Take the 0th element of that slice
 //   - Expect that element to be a map with a "host" key
 //   - Return the value at "host"
-func navigateData(data interface{}, keys []string) (interface{}, error) {
+func navigateData(data any, keys []string) (any, error) {
 	current := data
 	for _, k := range keys {
 		switch curr := current.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			// Current data is a map, so k is a field name
 			val, ok := curr[k]
 			if !ok {
@@ -40,7 +40,7 @@ func navigateData(data interface{}, keys []string) (interface{}, error) {
 			}
 			current = val
 
-		case []interface{}:
+		case []any:
 			// Current data is a slice, so k should be a numeric index
 			idx, err := strconv.Atoi(k)
 			if err != nil {
@@ -59,11 +59,11 @@ func navigateData(data interface{}, keys []string) (interface{}, error) {
 	return current, nil
 }
 
-// convertToMapStringInterface attempts to convert arbitrary YAML-parsed data into a map[string]interface{} for uniform handling.
+// convertToMapStringInterface attempts to convert arbitrary YAML-parsed data into a map[string]any for uniform handling.
 // It recursively ensures arrays and maps are properly converted.
-func convertToMapStringInterface(val interface{}) (map[string]interface{}, error) {
+func convertToMapStringInterface(val any) (map[string]any, error) {
 	switch v := val.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		// Recursively convert values
 		for key, val2 := range v {
 			converted, err := convertValue(val2)
@@ -75,14 +75,14 @@ func convertToMapStringInterface(val interface{}) (map[string]interface{}, error
 		return v, nil
 	default:
 		// If it's not a map at the root level, return an empty map
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
 }
 
-func convertValue(val interface{}) (interface{}, error) {
+func convertValue(val any) (any, error) {
 	// Recursively convert slices and maps
 	switch vv := val.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for k, v := range vv {
 			converted, err := convertValue(v)
 			if err != nil {
@@ -91,7 +91,7 @@ func convertValue(val interface{}) (interface{}, error) {
 			vv[k] = converted
 		}
 		return vv, nil
-	case []interface{}:
+	case []any:
 		for i, elem := range vv {
 			converted, err := convertValue(elem)
 			if err != nil {

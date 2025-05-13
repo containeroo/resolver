@@ -51,16 +51,16 @@ func TestUtils(t *testing.T) {
 	t.Run("navigateData", func(t *testing.T) {
 		t.Parallel()
 
-		data := map[string]interface{}{
-			"server": map[string]interface{}{
+		data := map[string]any{
+			"server": map[string]any{
 				"host":  "localhost",
-				"ports": []interface{}{80, 443},
-				"nested": map[string]interface{}{
+				"ports": []any{80, 443},
+				"nested": map[string]any{
 					"key": "value",
 				},
 			},
-			"array": []interface{}{
-				"zero", "one", map[string]interface{}{"nested": "val"},
+			"array": []any{
+				"zero", "one", map[string]any{"nested": "val"},
 			},
 		}
 
@@ -122,16 +122,16 @@ func TestUtils(t *testing.T) {
 
 		t.Run("TopLevelMap", func(t *testing.T) {
 			t.Parallel()
-			input := map[string]interface{}{
+			input := map[string]any{
 				"key": "value",
-				"nested": map[string]interface{}{
-					"subKey": []interface{}{"val1", "val2"},
+				"nested": map[string]any{
+					"subKey": []any{"val1", "val2"},
 				},
 			}
-			want := map[string]interface{}{
+			want := map[string]any{
 				"key": "value",
-				"nested": map[string]interface{}{
-					"subKey": []interface{}{"val1", "val2"},
+				"nested": map[string]any{
+					"subKey": []any{"val1", "val2"},
 				},
 			}
 			got, err := convertToMapStringInterface(input)
@@ -141,8 +141,8 @@ func TestUtils(t *testing.T) {
 
 		t.Run("NonMapTopLevel", func(t *testing.T) {
 			t.Parallel()
-			input := []interface{}{"val1", "val2"}
-			want := map[string]interface{}{}
+			input := []any{"val1", "val2"}
+			want := map[string]any{}
 			got, err := convertToMapStringInterface(input)
 			assert.NoError(t, err)
 			assert.Equal(t, want, got)
@@ -150,8 +150,8 @@ func TestUtils(t *testing.T) {
 
 		t.Run("AlreadyClean", func(t *testing.T) {
 			t.Parallel()
-			input := map[string]interface{}{"simple": "val"}
-			want := map[string]interface{}{"simple": "val"}
+			input := map[string]any{"simple": "val"}
+			want := map[string]any{"simple": "val"}
 			got, err := convertToMapStringInterface(input)
 			assert.NoError(t, err)
 			assert.Equal(t, want, got)
@@ -159,18 +159,18 @@ func TestUtils(t *testing.T) {
 
 		t.Run("ComplexNestedStructures", func(t *testing.T) {
 			t.Parallel()
-			input := map[string]interface{}{
-				"level1": map[string]interface{}{
-					"level2": []interface{}{
-						map[string]interface{}{"key": "val"},
+			input := map[string]any{
+				"level1": map[string]any{
+					"level2": []any{
+						map[string]any{"key": "val"},
 						"stringVal",
 					},
 				},
 			}
-			want := map[string]interface{}{
-				"level1": map[string]interface{}{
-					"level2": []interface{}{
-						map[string]interface{}{"key": "val"},
+			want := map[string]any{
+				"level1": map[string]any{
+					"level2": []any{
+						map[string]any{"key": "val"},
 						"stringVal",
 					},
 				},

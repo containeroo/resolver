@@ -8,6 +8,16 @@ import (
 	"gopkg.in/ini.v1"
 )
 
+// Resolves a value by loading an INI file and extracting a section.key pair.
+// The value after the prefix should be in the format "path/to/file.ini//Section.Key"
+// If no section is provided, the default section is used.
+// If no key is provided, returns the entire INI file as a string.
+// Example:
+// "ini:/config/app.ini//Database.User"
+// would load app.ini, locate the [Database] section, and return the value of User.
+//
+// Keys are navigated via "Section.Key" notation.
+// If no key is provided (no "//" present), returns the entire INI file as string.
 type INIResolver struct{}
 
 func (r *INIResolver) Resolve(value string) (string, error) {

@@ -12,11 +12,12 @@ type Resolver interface {
 
 // Prefixes for different resolvers
 const (
-	envPrefix  = "env:"
-	jsonPrefix = "json:"
-	yamlPrefix = "yaml:"
-	iniPrefix  = "ini:"
-	filePrefix = "file:"
+	envPrefix  string = "env:"
+	filePrefix string = "file:"
+	iniPrefix  string = "ini:"
+	jsonPrefix string = "json:"
+	tomlPrefix string = "toml:"
+	yamlPrefix string = "yaml:"
 )
 
 // Global registry of resolvers
@@ -26,6 +27,7 @@ var resolvers = map[string]Resolver{
 	yamlPrefix: &YAMLResolver{},
 	iniPrefix:  &INIResolver{},
 	filePrefix: &INIResolver{},
+	tomlPrefix: &TOMLResolver{},
 }
 
 // ResolveVariable attempts to resolve the given value by checking for known prefixes.

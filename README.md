@@ -1,11 +1,11 @@
 # Resolver Package
 
-The `resolver` package provides a flexible and extensible way to resolve configuration values from various sources including environment variables, files, JSON, YAML, INI, and key-value files. It uses a prefix-based system to identify which resolver to use and returns the resolved value or an error if something goes wrong.
+The `resolver` package provides a flexible and extensible way to resolve configuration values from various sources including environment variables, files, `JSON`, `YAML`, `INI`, `TOML` and key-value files. It uses a prefix-based system to identify which resolver to use and returns the resolved value or an error if something goes wrong.
 
 ## Installation
 
 ```bash
-go get github.com/yourusername/yourrepo/resolver
+go get github.com/containeroo/resolver/resolver
 ```
 
 ## Usage
@@ -22,6 +22,8 @@ The primary entry point is the `ResolveVariable` function. It takes a single str
   Example: `yaml:/config/app.yaml//server.port` returns `port` under `server` in `app.yaml`.It is also possible to indexing into arrays (e.g., `yaml:/config/app.yaml//servers.0.host`).
 - `ini`: – Resolves values from an INI file. Can specify a section and key, or just a key in the default section.
   Example: `ini:/config/app.ini//Section.Key` returns the value of `Key` under `Section`.
+- `toml`: – Resolves values from a TOML file.
+  Example: `toml:/config/app.toml//server.host` returns `host` under `server` in `app.toml`.
 - No prefix – Returns the value as-is, unchanged.
 
 ## Example
@@ -34,7 +36,7 @@ import (
     "log"
     "os"
 
-    "github.com/containeroo/portpatrol/resolver"
+    "github.com/containeroo/resolver"
 )
 
 func main() {

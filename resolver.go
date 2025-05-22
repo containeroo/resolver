@@ -26,7 +26,7 @@ var resolvers = map[string]Resolver{
 	jsonPrefix: &JSONResolver{},
 	yamlPrefix: &YAMLResolver{},
 	iniPrefix:  &INIResolver{},
-	filePrefix: &INIResolver{},
+	filePrefix: &KeyValueFileResolver{},
 	tomlPrefix: &TOMLResolver{},
 }
 

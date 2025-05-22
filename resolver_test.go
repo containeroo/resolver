@@ -22,7 +22,7 @@ func TestResolveVariable(t *testing.T) {
 		t.Parallel()
 
 		envName := "RESOLVER_TEST_ENV_" + sanitizeEnvName(t.Name())
-		os.Setenv(envName, "envValue")
+		os.Setenv(envName, "envValue") // nolint:errcheck
 
 		val, err := ResolveVariable("env:" + envName)
 		assert.NoError(t, err, "unexpected error resolving env variable")
@@ -39,7 +39,7 @@ func TestResolveVariable(t *testing.T) {
 		assert.NoError(t, err, "failed to write test JSON file")
 
 		envName := "RESOLVER_TEST_JSON_" + sanitizeEnvName(t.Name())
-		os.Setenv(envName, jsonPath)
+		os.Setenv(envName, jsonPath) // nolint:errcheck
 
 		val, err := ResolveVariable("json:$" + envName + "//key")
 		assert.NoError(t, err, "unexpected error resolving json key")

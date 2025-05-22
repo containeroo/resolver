@@ -25,9 +25,9 @@ func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("Failed to open file '%s'. %v", filePath, err)
+		return "", fmt.Errorf("failed to open file '%s'. %v", filePath, err)
 	}
-	defer file.Close()
+	defer file.Close() // nolint:errcheck
 
 	if keyPath != "" {
 		return searchKeyInFile(file, keyPath)
@@ -36,7 +36,7 @@ func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
 	// No key specified, read the whole file
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return "", fmt.Errorf("Failed to read file '%s'. %v", filePath, err)
+		return "", fmt.Errorf("failed to read file '%s'. %v", filePath, err)
 	}
 	return strings.TrimSpace(string(data)), nil
 }
@@ -51,5 +51,5 @@ func searchKeyInFile(file *os.File, key string) (string, error) {
 			return strings.TrimSpace(pair[1]), nil
 		}
 	}
-	return "", fmt.Errorf("Key '%s' not found in file '%s'.", key, file.Name())
+	return "", fmt.Errorf("key '%s' not found in file '%s'", key, file.Name())
 }

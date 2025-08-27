@@ -1,19 +1,28 @@
 package resolver
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func createYamlTestFile(t *testing.T) string {
-	tempDir := t.TempDir()
+func createYAMLTestFile(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(content), 0o666))
+	return p
+}
 
-	testFilePath := filepath.Join(tempDir, "config.yaml")
-	fileContent := `server:
+func TestYAMLResolver_Resolve(t *testing.T) {
+	r := &YAMLResolver{}
+
+	t.Run("Whole file", func(t *testing.T) {
+		content := `server:
   host: localhost
   port: 8080
   nested:
@@ -27,116 +36,113 @@ emptyString: ""
 nonString:
   inner: true
 `
-	err := os.WriteFile(testFilePath, []byte(fileContent), 0666)
-	assert.NoError(t, err, "failed to create test YAML file")
+		p := createYAMLTestFile(t, content)
 
-	return testFilePath
-}
+		val, err := r.Resolve(p)
+		require.NoError(t, err)
+		assert.Equal(t, strings.TrimSpace(content), val)
+	})
 
-func TestYAMLResolver_Resolve(t *testing.T) {
-	t.Parallel()
-	resolver := &YAMLResolver{}
-
-	t.Run("Resolve entire file", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createYamlTestFile(t)
-		val, err := resolver.Resolve(testFilePath)
-		assert.NoError(t, err, "unexpected error resolving entire YAML file")
-
-		expected := `server:
+	t.Run("Top-level key", func(t *testing.T) {
+		content := `server:
   host: localhost
   port: 8080
+`
+		p := createYAMLTestFile(t, content)
+
+		val, err := r.Resolve(p + "//server.host")
+		require.NoError(t, err)
+		assert.Equal(t, "localhost", val)
+	})
+
+	t.Run("Nested key", func(t *testing.T) {
+		content := `server:
   nested:
     key: value
-servers:
+`
+		p := createYAMLTestFile(t, content)
+
+		val, err := r.Resolve(p + "//server.nested.key")
+		require.NoError(t, err)
+		assert.Equal(t, "value", val)
+	})
+
+	t.Run("Array index element", func(t *testing.T) {
+		content := `servers:
   - host: example.com
     port: 80
   - host: example.org
     port: 443
-emptyString: ""
-nonString:
-  inner: true`
-		assert.Equal(t, expected, val)
-	})
+`
+		p := createYAMLTestFile(t, content)
 
-	t.Run("Resolve top-level key", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createYamlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//server.host")
-		assert.NoError(t, err, "unexpected error resolving top-level key")
-		assert.Equal(t, "localhost", val)
-	})
-
-	t.Run("Resolve nested key", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createYamlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//server.nested.key")
-		assert.NoError(t, err, "unexpected error resolving nested key")
-		assert.Equal(t, "value", val)
-	})
-
-	t.Run("Resolve array element", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createYamlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//servers.1.host")
-		assert.NoError(t, err, "unexpected error resolving array element")
+		val, err := r.Resolve(p + "//servers.1.host")
+		require.NoError(t, err)
 		assert.Equal(t, "example.org", val)
 	})
 
-	t.Run("Resolve empty string key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Array filter element", func(t *testing.T) {
+		// Requires bracket-aware path splitting in yaml.go:
+		// selector.Navigate(contentMap, selector.ParsePath(keyPath))
+		content := `servers:
+  - host: example.com
+    port: 80
+  - host: example.org
+    port: 443
+`
+		p := createYAMLTestFile(t, content)
 
-		testFilePath := createYamlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//emptyString")
-		assert.NoError(t, err, "unexpected error resolving empty string key")
+		val, err := r.Resolve(p + "//servers.[host=example.org].port")
+		require.NoError(t, err)
+		// YAML numbers remain numbers; resolver marshals non-strings to YAML and trims.
+		// For a scalar 443 that becomes "443".
+		assert.Equal(t, "443", val)
+	})
+
+	t.Run("Empty string value", func(t *testing.T) {
+		content := `emptyString: ""`
+		p := createYAMLTestFile(t, content)
+
+		val, err := r.Resolve(p + "//emptyString")
+		require.NoError(t, err)
 		assert.Equal(t, "", val)
 	})
 
-	t.Run("Resolve non-string value", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Non-string value (encoded)", func(t *testing.T) {
+		content := `nonString:
+  inner: true
+`
+		p := createYAMLTestFile(t, content)
 
-		testFilePath := createYamlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//nonString")
-		assert.NoError(t, err, "unexpected error resolving non-string value")
-
-		expected := `inner: true`
-		assert.Equal(t, expected, val)
+		val, err := r.Resolve(p + "//nonString")
+		require.NoError(t, err)
+		// Object is marshaled back to YAML, then trimmed.
+		assert.Equal(t, "inner: true", val)
 	})
 
-	t.Run("Resolve missing key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Missing key", func(t *testing.T) {
+		content := `server:
+  nested:
+    key: value
+`
+		p := createYAMLTestFile(t, content)
 
-		testFilePath := createYamlTestFile(t)
-		_, err := resolver.Resolve(testFilePath + "//server.nested.missingKey")
-		assert.Error(t, err, "expected an error resolving a missing key, but got none")
+		_, err := r.Resolve(p + "//server.nested.missingKey")
+		require.Error(t, err)
 	})
 
-	t.Run("Resolve non-existing file", func(t *testing.T) {
-		t.Parallel()
-
-		tempDir := t.TempDir()
-		nonExistentFile := filepath.Join(tempDir, "nonexistent.yaml")
-
-		_, err := resolver.Resolve(nonExistentFile)
-		assert.Error(t, err, "expected an error resolving a non-existing file, but got none")
+	t.Run("Non-existing file", func(t *testing.T) {
+		_, err := r.Resolve(filepath.Join(t.TempDir(), "nonexistent.yaml"))
+		require.Error(t, err)
 	})
 
 	t.Run("Invalid YAML", func(t *testing.T) {
-		t.Parallel()
-
-		tempDir := t.TempDir()
-		testFilePath := filepath.Join(tempDir, "config.yaml")
-		fileContent := "key: \"unclosed string"
-		err := os.WriteFile(testFilePath, []byte(fileContent), 0666)
-		assert.NoError(t, err)
-
-		_, err = resolver.Resolve(testFilePath)
-		assert.Error(t, err)
-		expected := fmt.Sprintf("failed to parse YAML in '%s': yaml: found unexpected end of stream", testFilePath)
-		assert.EqualError(t, err, expected)
+		p := createYAMLTestFile(t, `key: "unclosed string`)
+		_, err := r.Resolve(p)
+		require.Error(t, err)
+		// Be resilient to upstream error message wording; check key fragments.
+		msg := err.Error()
+		assert.Contains(t, msg, "failed to parse YAML in")
+		assert.Contains(t, msg, p)
 	})
 }

@@ -3,16 +3,28 @@ package resolver
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func createIniTestFile(t *testing.T) string {
-	tempDir := t.TempDir()
+func createIniTestFile(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.ini")
+	require.NoError(t, os.WriteFile(p, []byte(content), 0o666))
+	return p
+}
 
-	testFilePath := filepath.Join(tempDir, "config.ini")
-	fileContent := `
+func TestINIResolver_Resolve(t *testing.T) {
+	t.Run("Whole file", func(t *testing.T) {
+		t.Parallel()
+		r := &INIResolver{}
+
+		content := `
 [DEFAULT]
 Key1=DefaultVal1
 
@@ -23,76 +35,139 @@ Key3=SectionAVal3
 [SectionB]
 Key4=SectionBVal4
 `
-	err := os.WriteFile(testFilePath, []byte(fileContent), 0666)
-	assert.NoError(t, err, "failed to create test INI file")
+		p := createIniTestFile(t, content)
 
-	return testFilePath
-}
+		val, err := r.Resolve(p)
+		require.NoError(t, err)
+		assert.Equal(t, strings.TrimSpace(content), val)
+	})
 
-func TestINIResolver_Resolve(t *testing.T) {
-	t.Parallel()
-	resolver := &INIResolver{}
-
-	t.Run("Resolve entire file", func(t *testing.T) {
+	t.Run("Default section key", func(t *testing.T) {
 		t.Parallel()
+		r := &INIResolver{}
 
-		testFilePath := createIniTestFile(t)
-		val, err := resolver.Resolve(testFilePath)
-		assert.NoError(t, err, "unexpected error resolving entire INI file")
+		content := `
+[DEFAULT]
+Key1=DefaultVal1
 
-		expected := `[DEFAULT]
+[SectionA]
+Key2=SectionAVal2
+`
+		p := createIniTestFile(t, content)
+
+		val, err := r.Resolve(p + "//Key1")
+		require.NoError(t, err)
+		assert.Equal(t, "DefaultVal1", val)
+	})
+
+	t.Run("Named section key", func(t *testing.T) {
+		t.Parallel()
+		r := &INIResolver{}
+
+		content := `
+[DEFAULT]
 Key1=DefaultVal1
 
 [SectionA]
 Key2=SectionAVal2
 Key3=SectionAVal3
+`
+		p := createIniTestFile(t, content)
 
-[SectionB]
-Key4=SectionBVal4`
-		assert.Equal(t, expected, val)
-	})
-
-	t.Run("Resolve key from default section", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createIniTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//Key1")
-		assert.NoError(t, err, "unexpected error resolving default section key")
-		assert.Equal(t, "DefaultVal1", val)
-	})
-
-	t.Run("Resolve key from named section", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createIniTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//SectionA.Key3")
-		assert.NoError(t, err, "unexpected error resolving section key")
+		val, err := r.Resolve(p + "//SectionA.Key3")
+		require.NoError(t, err)
 		assert.Equal(t, "SectionAVal3", val)
 	})
 
-	t.Run("Resolve missing key", func(t *testing.T) {
+	t.Run("Missing key", func(t *testing.T) {
 		t.Parallel()
+		r := &INIResolver{}
 
-		testFilePath := createIniTestFile(t)
-		_, err := resolver.Resolve(testFilePath + "//NonExistentKey")
-		assert.Error(t, err, "expected an error resolving a missing key, but got none")
+		content := `
+[DEFAULT]
+Key1=DefaultVal1
+`
+		p := createIniTestFile(t, content)
+
+		_, err := r.Resolve(p + "//Nope")
+		require.Error(t, err)
 	})
 
-	t.Run("Resolve missing section", func(t *testing.T) {
+	t.Run("Missing section", func(t *testing.T) {
 		t.Parallel()
+		r := &INIResolver{}
 
-		testFilePath := createIniTestFile(t)
-		_, err := resolver.Resolve(testFilePath + "//NonExistentSection.Key")
-		assert.Error(t, err, "expected an error resolving a missing section, but got none")
+		content := `
+[DEFAULT]
+Key1=DefaultVal1
+`
+		p := createIniTestFile(t, content)
+
+		_, err := r.Resolve(p + "//Ghost.Key")
+		require.Error(t, err)
 	})
 
-	t.Run("Resolve non-existing file", func(t *testing.T) {
+	t.Run("File not found", func(t *testing.T) {
 		t.Parallel()
+		r := &INIResolver{}
+		_, err := r.Resolve(filepath.Join(t.TempDir(), "nonexistent.ini"))
+		require.Error(t, err)
+	})
 
-		tempDir := t.TempDir()
-		nonExistentFile := filepath.Join(tempDir, "nonexistent.ini")
+	t.Run("Expands env vars in path", func(t *testing.T) {
+		r := &INIResolver{}
 
-		_, err := resolver.Resolve(nonExistentFile)
-		assert.Error(t, err, "expected an error resolving a non-existing file, but got none")
+		dir := t.TempDir()
+		t.Setenv("DIR", dir)
+		p := filepath.Join(dir, "cfg.ini")
+		content := `
+[DEFAULT]
+X=42
+`
+		require.NoError(t, os.WriteFile(p, []byte(content), 0o666))
+
+		val, err := r.Resolve("${DIR}/cfg.ini//X")
+		require.NoError(t, err)
+		assert.Equal(t, "42", val)
+	})
+
+	t.Run("INI scheme via default registry", func(t *testing.T) {
+		t.Parallel()
+		content := `
+[DEFAULT]
+Key1=V1
+
+[Web]
+Port=8080
+`
+		p := createIniTestFile(t, content)
+
+		// default section
+		got, err := ResolveVariable("ini:" + p + "//Key1")
+		require.NoError(t, err)
+		assert.Equal(t, "V1", got)
+
+		// named section
+		got, err = ResolveVariable("ini:" + p + "//Web.Port")
+		require.NoError(t, err)
+		assert.Equal(t, "8080", got)
+	})
+
+	t.Run("CRLF handling", func(t *testing.T) {
+		t.Parallel()
+		r := &INIResolver{}
+
+		content := "[DEFAULT]\r\nA=1\r\n\r\n[Sec]\r\nB=2\r\n"
+		p := createIniTestFile(t, content)
+
+		val, err := r.Resolve(p + "//Sec.B")
+		require.NoError(t, err)
+		assert.Equal(t, "2", val)
+
+		if runtime.GOOS == "windows" {
+			all, err := r.Resolve(p)
+			require.NoError(t, err)
+			assert.Equal(t, strings.TrimSpace(content), all)
+		}
 	})
 }

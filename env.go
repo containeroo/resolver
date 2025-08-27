@@ -5,19 +5,14 @@ import (
 	"os"
 )
 
-// Resolves a value from environment variables.
-// The value after the prefix should be the name of the environment variable.
-// Example:
-// "env:MY_ENV_VAR"
-// would return the value of the MY_ENV_VAR environment variable.
-//
-// If the variable is not set, an error is returned.
+// EnvResolver resolves a value from environment variables.
+// Format: "env:MY_ENV_VAR"
 type EnvResolver struct{}
 
 func (r *EnvResolver) Resolve(value string) (string, error) {
 	res, found := os.LookupEnv(value)
 	if !found {
-		return "", fmt.Errorf("environment variable '%s' not found", value)
+		return "", fmt.Errorf("environment variable %q not found", value)
 	}
 	return res, nil
 }

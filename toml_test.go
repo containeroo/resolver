@@ -3,18 +3,26 @@ package resolver
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func createTomlTestFile(t *testing.T) string {
+func createTOMLTestFile(t *testing.T, content string) string {
 	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(p, []byte(content), 0o666))
+	return p
+}
 
-	tempDir := t.TempDir()
-	testFilePath := filepath.Join(tempDir, "config.toml")
+func TestTOMLResolver_Resolve(t *testing.T) {
+	r := &TOMLResolver{}
 
-	fileContent := `emptyString = ""
+	t.Run("Whole file", func(t *testing.T) {
+		content := `emptyString = ""
 
 [server]
 host = "localhost"
@@ -33,32 +41,42 @@ port = 443
 [nonString]
 inner = true
 `
+		p := createTOMLTestFile(t, content)
 
-	err := os.WriteFile(testFilePath, []byte(fileContent), 0666)
-	assert.NoError(t, err, "failed to create test TOML file")
+		val, err := r.Resolve(p)
+		require.NoError(t, err)
+		assert.Equal(t, strings.TrimSpace(content), val)
+	})
 
-	return testFilePath
-}
-
-func TestTOMLResolver_Resolve(t *testing.T) {
-	t.Parallel()
-	resolver := &TOMLResolver{}
-
-	t.Run("Resolve entire file", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createTomlTestFile(t)
-		val, err := resolver.Resolve(testFilePath)
-		assert.NoError(t, err, "unexpected error resolving entire TOML file")
-
-		expected := `emptyString = ""
-
+	t.Run("Top-level key", func(t *testing.T) {
+		content := `
 [server]
 host = "localhost"
 port = 8080
+`
+		p := createTOMLTestFile(t, content)
+
+		val, err := r.Resolve(p + "//server.host")
+		require.NoError(t, err)
+		assert.Equal(t, "localhost", val)
+	})
+
+	t.Run("Nested key", func(t *testing.T) {
+		content := `
+[server]
+host = "localhost"
 [server.nested]
 key = "value"
+`
+		p := createTOMLTestFile(t, content)
 
+		val, err := r.Resolve(p + "//server.nested.key")
+		require.NoError(t, err)
+		assert.Equal(t, "value", val)
+	})
+
+	t.Run("Array index element", func(t *testing.T) {
+		content := `
 [[servers]]
 host = "example.com"
 port = 80
@@ -66,89 +84,78 @@ port = 80
 [[servers]]
 host = "example.org"
 port = 443
+`
+		p := createTOMLTestFile(t, content)
 
-[nonString]
-inner = true`
-		assert.Equal(t, expected, val)
-	})
-
-	t.Run("Resolve top-level key", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createTomlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//server.host")
-		assert.NoError(t, err, "unexpected error resolving top-level key")
-		assert.Equal(t, "localhost", val)
-	})
-
-	t.Run("Resolve nested key", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createTomlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//server.nested.key")
-		assert.NoError(t, err, "unexpected error resolving nested key")
-		assert.Equal(t, "value", val)
-	})
-
-	t.Run("Resolve array element", func(t *testing.T) {
-		t.Parallel()
-
-		testFilePath := createTomlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//servers.1.host")
-		assert.NoError(t, err, "unexpected error resolving array element")
+		val, err := r.Resolve(p + "//servers.1.host")
+		require.NoError(t, err)
 		assert.Equal(t, "example.org", val)
 	})
 
-	t.Run("Resolve empty string key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Array filter element", func(t *testing.T) {
+		// Ensures bracket-aware path parsing works (servers.[host=example.org].port)
+		content := `
+[[servers]]
+host = "example.com"
+port = 80
 
-		testFilePath := createTomlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//emptyString")
-		assert.NoError(t, err, "unexpected error resolving empty string key")
+[[servers]]
+host = "example.org"
+port = 443
+`
+		p := createTOMLTestFile(t, content)
+
+		val, err := r.Resolve(p + "//servers.[host=example.org].port")
+		require.NoError(t, err)
+		// Non-string → TOML-encoded back to string "443"
+		assert.Equal(t, "443", val)
+	})
+
+	t.Run("Empty string value", func(t *testing.T) {
+		content := `emptyString = ""`
+		p := createTOMLTestFile(t, content)
+
+		val, err := r.Resolve(p + "//emptyString")
+		require.NoError(t, err)
 		assert.Equal(t, "", val)
 	})
 
-	t.Run("Resolve non-string value", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Non-string value (encoded)", func(t *testing.T) {
+		content := `
+[nonString]
+inner = true
+`
+		p := createTOMLTestFile(t, content)
 
-		testFilePath := createTomlTestFile(t)
-		val, err := resolver.Resolve(testFilePath + "//nonString")
-		assert.NoError(t, err, "unexpected error resolving non-string value")
-
-		expected := `inner = true`
-		assert.Equal(t, expected, val)
+		val, err := r.Resolve(p + "//nonString")
+		require.NoError(t, err)
+		// The resolver marshals non-strings back to TOML; a table encodes as "inner = true"
+		assert.Equal(t, "inner = true", val)
 	})
 
-	t.Run("Resolve missing key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Missing key", func(t *testing.T) {
+		content := `
+[server]
+host = "localhost"
+`
+		p := createTOMLTestFile(t, content)
 
-		testFilePath := createTomlTestFile(t)
-		_, err := resolver.Resolve(testFilePath + "//server.missing")
-		assert.Error(t, err, "expected an error resolving a missing key, but got none")
+		_, err := r.Resolve(p + "//server.missing")
+		require.Error(t, err)
 	})
 
-	t.Run("Resolve non-existing file", func(t *testing.T) {
-		t.Parallel()
-
-		tempDir := t.TempDir()
-		nonExistentFile := filepath.Join(tempDir, "nonexistent.toml")
-
-		_, err := resolver.Resolve(nonExistentFile)
-		assert.Error(t, err, "expected an error resolving a non-existing file, but got none")
+	t.Run("Non-existing file", func(t *testing.T) {
+		_, err := r.Resolve(filepath.Join(t.TempDir(), "nonexistent.toml"))
+		require.Error(t, err)
 	})
 
 	t.Run("Invalid TOML", func(t *testing.T) {
-		t.Parallel()
+		dir := t.TempDir()
+		bad := filepath.Join(dir, "bad.toml")
+		require.NoError(t, os.WriteFile(bad, []byte("= invalid"), 0o666))
 
-		tempDir := t.TempDir()
-		testFilePath := filepath.Join(tempDir, "bad.toml")
-
-		invalid := "= invalid"
-		err := os.WriteFile(testFilePath, []byte(invalid), 0666)
-		assert.NoError(t, err)
-
-		result, err := resolver.Resolve(testFilePath)
-		assert.Equal(t, "", result)
-		assert.Error(t, err, "expected parse error but got none")
+		val, err := r.Resolve(bad)
+		assert.Equal(t, "", val)
+		require.Error(t, err)
 	})
 }

@@ -8,15 +8,8 @@ import (
 	"strings"
 )
 
-// Resolves a value by reading a key from a plain key=value text file.
-// The value after the prefix should be in the format "path/to/file.txt//Key"
-// If no key is provided, returns the entire file as a string.
-// Example:
-// "file:/config/app.txt//USERNAME"
-// would search for a line like "USERNAME = alice" and return "alice".
-//
-// Lines are matched by exact key name before the equals sign.
-// If no key is provided (no "//" present), returns the entire file as string.
+// KeyValueFileResolver resolves a value by reading a key from a plain key=value text file.
+// Format: "file:/path/file.txt//KEY" or "file:/path/file.txt" (entire file).
 type KeyValueFileResolver struct{}
 
 func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
@@ -25,7 +18,7 @@ func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file '%s'. %v", filePath, err)
+		return "", fmt.Errorf("failed to open file %q: %w", filePath, err)
 	}
 	defer file.Close() // nolint:errcheck
 
@@ -36,7 +29,7 @@ func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
 	// No key specified, read the whole file
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file '%s'. %v", filePath, err)
+		return "", fmt.Errorf("failed to read file %q: %w", filePath, err)
 	}
 	return strings.TrimSpace(string(data)), nil
 }
@@ -45,11 +38,21 @@ func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
 func searchKeyInFile(file *os.File, key string) (string, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Support "export KEY=VAL" and "KEY = VAL"
+		if rest, ok := strings.CutPrefix(line, "export "); ok {
+			line = strings.TrimSpace(rest)
+		}
 		pair := strings.SplitN(line, "=", 2)
 		if len(pair) == 2 && strings.TrimSpace(pair[0]) == key {
 			return strings.TrimSpace(pair[1]), nil
 		}
 	}
-	return "", fmt.Errorf("key '%s' not found in file '%s'", key, file.Name())
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("failed scanning file %q: %w", file.Name(), err)
+	}
+	return "", fmt.Errorf("key %q not found in file %q", key, file.Name())
 }

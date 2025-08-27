@@ -6,14 +6,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func createJsonTestFile(t *testing.T) string {
-	tempDir := t.TempDir()
+func createJSONTestFile(t *testing.T) string {
+	t.Helper()
 
-	// Create a temporary JSON file with nested objects and arrays
-	testFilePath := filepath.Join(tempDir, "config.json")
-	fileContent := `{
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+
+	// Nested objects and arrays; also an empty string and a non-string value.
+	content := `{
   "server": {
     "host": "localhost",
     "port": 8080,
@@ -28,24 +31,17 @@ func createJsonTestFile(t *testing.T) string {
   "emptyString": "",
   "nonString": { "inner": true }
 }`
-	err := os.WriteFile(testFilePath, []byte(fileContent), 0666)
-	assert.NoError(t, err, "failed to create test JSON file")
-
-	return testFilePath
+	require.NoError(t, os.WriteFile(p, []byte(content), 0o666), "failed to create test JSON file")
+	return p
 }
 
 func TestJSONResolver_Resolve(t *testing.T) {
-	t.Parallel()
+	t.Run("Whole file", func(t *testing.T) {
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
 
-	t.Run("Resolve entire file", func(t *testing.T) {
-		t.Parallel()
-
-		resolver := &JSONResolver{}
-		testFilePath := createJsonTestFile(t)
-
-		// Call the resolver without the 'json:' prefix.
-		val, err := resolver.Resolve(testFilePath)
-		assert.NoError(t, err, "unexpected error resolving entire JSON file")
+		val, err := r.Resolve(p)
+		require.NoError(t, err)
 
 		expected := `{
   "server": {
@@ -65,81 +61,73 @@ func TestJSONResolver_Resolve(t *testing.T) {
 		assert.Equal(t, expected, val)
 	})
 
-	t.Run("Resolve top-level key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Top level key", func(t *testing.T) {
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
 
-		resolver := &JSONResolver{}
-		testFilePath := createJsonTestFile(t)
-
-		val, err := resolver.Resolve(testFilePath + "//server.host")
-		assert.NoError(t, err, "unexpected error resolving top-level key")
+		val, err := r.Resolve(p + "//server.host")
+		require.NoError(t, err)
 		assert.Equal(t, "localhost", val)
 	})
 
-	t.Run("Resolve nested key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Nested key", func(t *testing.T) {
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
 
-		resolver := &JSONResolver{}
-		testFilePath := createJsonTestFile(t)
-
-		val, err := resolver.Resolve(testFilePath + "//server.nested.key")
-		assert.NoError(t, err, "unexpected error resolving nested key")
+		val, err := r.Resolve(p + "//server.nested.key")
+		require.NoError(t, err)
 		assert.Equal(t, "value", val)
 	})
 
-	t.Run("Resolve array element", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Array index", func(t *testing.T) {
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
 
-		resolver := &JSONResolver{}
-		testFilePath := createJsonTestFile(t)
-
-		val, err := resolver.Resolve(testFilePath + "//servers.1.host")
-		assert.NoError(t, err, "unexpected error resolving array element")
+		val, err := r.Resolve(p + "//servers.1.host")
+		require.NoError(t, err)
 		assert.Equal(t, "example.org", val)
 	})
 
-	t.Run("Resolve empty string key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Array filter", func(t *testing.T) {
+		// Uses the selector filter form: [key=value]
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
 
-		resolver := &JSONResolver{}
-		testFilePath := createJsonTestFile(t)
+		val, err := r.Resolve(p + "//servers.[host=example.org].port")
+		require.NoError(t, err)
+		// Non-string values are JSON-encoded on return; 443 -> "443"
+		assert.Equal(t, "443", val)
+	})
 
-		val, err := resolver.Resolve(testFilePath + "//emptyString")
-		assert.NoError(t, err, "unexpected error resolving empty string key")
+	t.Run("Empty string value", func(t *testing.T) {
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
+
+		val, err := r.Resolve(p + "//emptyString")
+		require.NoError(t, err)
 		assert.Equal(t, "", val)
 	})
 
-	t.Run("Resolve non-string value", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Non-string value encoded", func(t *testing.T) {
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
 
-		resolver := &JSONResolver{}
-		testFilePath := createJsonTestFile(t)
-
-		val, err := resolver.Resolve(testFilePath + "//nonString")
-		assert.NoError(t, err, "unexpected error resolving non-string value")
-		expected := `{"inner":true}`
-		assert.Equal(t, expected, val)
+		val, err := r.Resolve(p + "//nonString")
+		require.NoError(t, err)
+		assert.Equal(t, `{"inner":true}`, val)
 	})
 
-	t.Run("Resolve missing key", func(t *testing.T) {
-		t.Parallel()
+	t.Run("Missing key", func(t *testing.T) {
+		r := &JSONResolver{}
+		p := createJSONTestFile(t)
 
-		resolver := &JSONResolver{}
-		testFilePath := createJsonTestFile(t)
-
-		_, err := resolver.Resolve(testFilePath + "//server.nested.missingKey")
-		assert.Error(t, err, "expected an error resolving a missing key, but got none")
+		_, err := r.Resolve(p + "//server.nested.missingKey")
+		require.Error(t, err)
 	})
 
-	t.Run("Resolve non-existing file", func(t *testing.T) {
-		t.Parallel()
-
-		resolver := &JSONResolver{}
-
-		tempDir := t.TempDir()
-		nonExistentFile := filepath.Join(tempDir, "nonexistent.json")
-
-		_, err := resolver.Resolve(nonExistentFile)
-		assert.Error(t, err, "expected an error resolving a non-existing file, but got none")
+	t.Run("File not found", func(t *testing.T) {
+		r := &JSONResolver{}
+		_, err := r.Resolve(filepath.Join(t.TempDir(), "nonexistent.json"))
+		require.Error(t, err)
 	})
 }

@@ -5,12 +5,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/containeroo/resolver/selector"
 	"gopkg.in/yaml.v3"
 )
 
-// Resolves a value by loading a YAML file and extracting a nested key using dot notation.
-// Similar usage as JSONResolver:
-// "yaml:/config/app.yaml//server.host"
+// YAMLResolver resolves a value by loading a YAML file and extracting a nested key.
+// Format: "yaml:/path/file.yaml//key1.key2.keyN".
+// If no key is provided, returns the whole YAML file as a string.
 type YAMLResolver struct{}
 
 func (r *YAMLResolver) Resolve(value string) (string, error) {
@@ -19,36 +20,83 @@ func (r *YAMLResolver) Resolve(value string) (string, error) {
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read YAML file '%s': %w", filePath, err)
+		return "", fmt.Errorf("failed to read YAML file %q: %w", filePath, err)
 	}
 
+	// Parse YAML into a generic structure (map[string]any / []any / scalars).
 	var content any
 	if err := yaml.Unmarshal(data, &content); err != nil {
-		return "", fmt.Errorf("failed to parse YAML in '%s': %w", filePath, err)
+		return "", fmt.Errorf("failed to parse YAML in %q: %w", filePath, err)
 	}
 
-	// Convert YAML to map[string]any if needed
+	// Normalize to map[string]any at the root so selector can navigate uniformly.
 	contentMap, err := convertToMapStringInterface(content)
 	if err != nil {
-		return "", fmt.Errorf("failed to process YAML '%s': %w", filePath, err)
+		return "", fmt.Errorf("failed to process YAML %q: %w", filePath, err)
 	}
 
+	// No key → return the entire file (trimmed).
 	if keyPath == "" {
-		// Return whole file as YAML string
 		return strings.TrimSpace(string(data)), nil
 	}
 
-	val, err := navigateData(contentMap, strings.Split(keyPath, "."))
+	// Bracket-aware path splitting (supports servers.[host=example.org].port).
+	tokens := selector.ParsePath(keyPath)
+
+	// Walk the structure using selector.
+	val, err := selector.Navigate(contentMap, tokens)
 	if err != nil {
-		return "", fmt.Errorf("key path '%s' not found in YAML '%s': %w", keyPath, filePath, err)
+		return "", fmt.Errorf("key path %q not found in YAML %q: %w", keyPath, filePath, err)
 	}
 
-	// If the value isn't a string, return its YAML representation
-	switch typedVal := val.(type) {
-	case string:
-		return typedVal, nil
+	// Strings are returned as-is; non-strings are re-encoded as YAML (trimmed).
+	if s, ok := val.(string); ok {
+		return s, nil
+	}
+	yData, _ := yaml.Marshal(val)
+	return strings.TrimSpace(string(yData)), nil
+}
+
+// convertToMapStringInterface converts arbitrary YAML-parsed data into map[string]any at the root
+// and recursively ensures maps/slices contain only map[string]any / []any / scalars.
+func convertToMapStringInterface(val any) (map[string]any, error) {
+	switch v := val.(type) {
+	case map[string]any:
+		for k, vv := range v {
+			conv, err := convertValue(vv)
+			if err != nil {
+				return nil, err
+			}
+			v[k] = conv
+		}
+		return v, nil
 	default:
-		yData, _ := yaml.Marshal(typedVal)
-		return strings.TrimSpace(string(yData)), nil
+		// If the root isn’t a map, return an empty map so navigation will fail cleanly.
+		return map[string]any{}, nil
+	}
+}
+
+func convertValue(val any) (any, error) {
+	switch vv := val.(type) {
+	case map[string]any:
+		for k, v := range vv {
+			conv, err := convertValue(v)
+			if err != nil {
+				return nil, err
+			}
+			vv[k] = conv
+		}
+		return vv, nil
+	case []any:
+		for i, elem := range vv {
+			conv, err := convertValue(elem)
+			if err != nil {
+				return nil, err
+			}
+			vv[i] = conv
+		}
+		return vv, nil
+	default:
+		return vv, nil
 	}
 }

@@ -1,44 +1,33 @@
 package resolver
 
-import (
-	"strings"
-)
+// Package-level default registry and convenience functions.
+// This preserves the original simple API while allowing advanced users
+// to construct custom registries with NewRegistry/NewDefaultRegistry.
 
-// Prefixes for different resolvers
-const (
-	envPrefix  string = "env:"
-	filePrefix string = "file:"
-	iniPrefix  string = "ini:"
-	jsonPrefix string = "json:"
-	tomlPrefix string = "toml:"
-	yamlPrefix string = "yaml:"
-)
+var defaultRegistry = NewDefaultRegistry()
 
-// Global registry of resolvers
-var resolvers = map[string]Resolver{
-	envPrefix:  &EnvResolver{},
-	jsonPrefix: &JSONResolver{},
-	yamlPrefix: &YAMLResolver{},
-	iniPrefix:  &INIResolver{},
-	filePrefix: &KeyValueFileResolver{},
-	tomlPrefix: &TOMLResolver{},
+// RegisterResolver adds or replaces a resolver in the default registry.
+// scheme must include a trailing colon, e.g. "json:".
+func RegisterResolver(scheme string, r Resolver) {
+	defaultRegistry.Register(scheme, r)
 }
 
-// ResolveVariable attempts to resolve a variable string using a registered resolver.
-// The function checks for known prefixes such as "env:", "json:", or "file:" and delegates
-// to the corresponding resolver. If no known prefix is found, the original value is returned.
+// ResolveVariable attempts to resolve a variable string using a registered resolver
+// from the default registry. If no known prefix is found, the original value is returned.
 //
-// Parameters:
-//   - value: the input string, possibly prefixed with a resolver keyword.
+// Examples:
 //
-// Returns:
-//   - resolved string if resolved successfully or the original string if no prefix matches.
-//   - error if resolution fails.
+//	ResolveVariable("env:HOME")
+//	ResolveVariable("json:/cfg/app.json//server.host")
+//	ResolveVariable("yaml:${CONFIG}//servers.0.addr")
+//	ResolveVariable("yaml:${CONFIG}//servers.[name=app].addr")
+//	ResolveVariable("file:/etc/app.conf//USERNAME")
 func ResolveVariable(value string) (string, error) {
-	for prefix, resolver := range resolvers {
-		if strings.HasPrefix(value, prefix) {
-			return resolver.Resolve(strings.TrimPrefix(value, prefix))
-		}
-	}
-	return value, nil
+	return defaultRegistry.ResolveVariable(value)
+}
+
+// DefaultRegistry returns the global default registry.
+// Mutating it is safe for concurrent use.
+func DefaultRegistry() *Registry {
+	return defaultRegistry
 }

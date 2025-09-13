@@ -90,3 +90,34 @@ func (r *Registry) ResolveVariable(value string) (string, error) {
 	// No scheme matched: return as-is (back-compat behavior).
 	return value, nil
 }
+
+// ResolveSlice resolves each value with the registry using the same rules as
+// ResolveVariable: known scheme => delegate; unknown scheme => return as-is.
+// Returns a new slice in the same order. Fails fast on the first error.
+func (r *Registry) ResolveSlice(values []string) ([]string, error) {
+	out := make([]string, len(values))
+	for i, v := range values {
+		s, e := r.ResolveVariable(v)
+		if e != nil {
+			return nil, fmt.Errorf("resolve slice index %d (%q): %w", i, v, e)
+		}
+		out[i] = s
+	}
+	return out, nil
+}
+
+// ResolveSliceBestEffort resolves all values and returns the results plus a list of per-index errors.
+// The output slice always has len(values). Callers can decide what to do with errors.
+func (r *Registry) ResolveSliceBestEffort(values []string) (out []string, errs []error) {
+	out = make([]string, len(values))
+	errs = make([]error, 0, len(values)) // len 0, cap N
+
+	for i, v := range values {
+		s, err := r.ResolveVariable(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("index %d (%q): %w", i, v, err))
+		}
+		out[i] = s // "" on error, pass-through or resolved on success
+	}
+	return out, errs
+}

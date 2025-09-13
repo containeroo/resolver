@@ -26,6 +26,19 @@ func ResolveVariable(value string) (string, error) {
 	return defaultRegistry.ResolveVariable(value)
 }
 
+// ResolveSlice resolves each string in values using the default registry.
+// It returns a new slice; the input is not modified. If any element fails
+// to resolve, the function returns that error (strict mode).
+func ResolveSlice(values []string) ([]string, error) {
+	return defaultRegistry.ResolveSlice(values)
+}
+
+// ResolveSliceBestEffort resolves all values and returns the results plus a list of per-index errors.
+// The output slice always has len(values). Callers can decide what to do with errors.
+func ResolveSliceBestEffort(values []string) ([]string, []error) {
+	return defaultRegistry.ResolveSliceBestEffort(values)
+}
+
 // DefaultRegistry returns the global default registry.
 // Mutating it is safe for concurrent use.
 func DefaultRegistry() *Registry {

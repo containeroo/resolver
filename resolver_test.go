@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// stubResolver helps test custom resolvers.
 type stubResolver struct {
 	out  string
 	err  error
@@ -23,6 +24,17 @@ func (s *stubResolver) Resolve(v string) (string, error) {
 		return s.out, nil
 	}
 	return "stub:" + v, nil
+}
+
+// countingResolver helps verify short-circuiting behavior in strict mode.
+type countingResolver struct {
+	prefix string
+	count  int
+}
+
+func (c *countingResolver) Resolve(v string) (string, error) {
+	c.count++
+	return c.prefix + v, nil
 }
 
 func TestResolveVariable(t *testing.T) {
@@ -103,5 +115,105 @@ func TestDefaultRegistry(t *testing.T) {
 		// Calling again should yield the same pointer
 		reg2 := DefaultRegistry()
 		assert.Same(t, reg, reg2)
+	})
+}
+
+func TestResolveSlice(t *testing.T) {
+	t.Run("Empty slice returns empty", func(t *testing.T) {
+		got, err := ResolveSlice(nil)
+		require.NoError(t, err)
+		assert.NotNil(t, got)
+		assert.Len(t, got, 0)
+	})
+
+	t.Run("Mixed literals, unknown scheme pass-through, and successful resolutions", func(t *testing.T) {
+		// env
+		t.Setenv("HELLO", "world")
+
+		// custom resolvers
+		RegisterResolver("sliceok:", &stubResolver{}) // returns "stub:<rest>"
+
+		in := []string{
+			"sliceok:a",    // resolved by stub
+			"just-literal", // unchanged
+			"unknown:zzz",  // unknown → unchanged
+			"env:HELLO",    // resolved by EnvResolver
+			"sliceok:b",    // resolved by stub
+		}
+		got, err := ResolveSlice(in)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{
+			"stub:a",
+			"just-literal",
+			"unknown:zzz",
+			"world",
+			"stub:b",
+		}, got)
+	})
+
+	t.Run("Stops on first error (strict)", func(t *testing.T) {
+		ok := &countingResolver{prefix: "ok:"}
+		RegisterResolver("sliceok:", ok)
+
+		wantErr := errors.New("boom")
+		RegisterResolver("sliceerr:", &stubResolver{err: wantErr})
+
+		// Should stop at index 1, not resolving the last element.
+		in := []string{"sliceok:a", "sliceerr:oops", "sliceok:b"}
+
+		got, err := ResolveSlice(in)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, wantErr)
+
+		// Verify short-circuit: only the first "sliceok:" call should have happened.
+		assert.Equal(t, 1, ok.count, "should stop after the first error")
+		assert.Nil(t, got, "strict resolver should not return partial results")
+	})
+}
+
+func TestResolveSliceBestEffort(t *testing.T) {
+	t.Run("Empty slice returns empty outputs and no errors", func(t *testing.T) {
+		out, errs := ResolveSliceBestEffort(nil)
+		assert.NotNil(t, out)
+		assert.Len(t, out, 0)
+		assert.Len(t, errs, 0)
+	})
+
+	t.Run("Collects errors but resolves the rest; unknown schemes pass through", func(t *testing.T) {
+		ok := &countingResolver{prefix: "ok:"}
+		RegisterResolver("sliceok:", ok)
+
+		wantErr := errors.New("kaput")
+		RegisterResolver("sliceerr:", &stubResolver{err: wantErr})
+
+		in := []string{
+			"sliceok:a",    // success
+			"sliceerr:x",   // error
+			"unknown:zzz",  // unknown → unchanged
+			"sliceok:b",    // success
+			"just-literal", // unchanged
+			"sliceerr:y",   // error
+		}
+
+		out, errs := ResolveSliceBestEffort(in)
+
+		// Output length always equals input length.
+		require.Len(t, out, len(in))
+
+		// Successes & pass-throughs are correct.
+		assert.Equal(t, "ok:a", out[0])
+		assert.Equal(t, "unknown:zzz", out[2])
+		assert.Equal(t, "ok:b", out[3])
+		assert.Equal(t, "just-literal", out[4])
+
+		// We don't assert what out[1] / out[5] contain, since implementations may
+		// choose "" or the original unresolved value on error. We only assert errors.
+		require.Len(t, errs, 2)
+		assert.ErrorIs(t, errs[0], wantErr)
+		assert.ErrorIs(t, errs[1], wantErr)
+
+		// Best-effort should process all resolvable items.
+		assert.Equal(t, 2, ok.count, "both sliceok:* entries should be resolved")
 	})
 }

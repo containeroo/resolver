@@ -2,7 +2,9 @@ package resolver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -18,8 +20,18 @@ func (r *JSONResolver) Resolve(value string) (string, error) {
 	filePath, keyPath := splitFileAndKey(value)
 	filePath = os.ExpandEnv(filePath)
 
+	if strings.TrimSpace(filePath) == "" {
+		return "", fmt.Errorf("%w: empty file path", ErrBadPath)
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("%w: %s", ErrNotFound, filePath)
+		}
+		if errors.Is(err, fs.ErrPermission) {
+			return "", fmt.Errorf("%w: %s", ErrForbidden, filePath)
+		}
 		return "", fmt.Errorf("failed to read JSON file %q: %w", filePath, err)
 	}
 
@@ -34,7 +46,7 @@ func (r *JSONResolver) Resolve(value string) (string, error) {
 
 	val, err := selector.Navigate(content, selector.ParsePath(keyPath))
 	if err != nil {
-		return "", fmt.Errorf("key path %q not found in JSON %q: %w", keyPath, filePath, err)
+		return "", fmt.Errorf("%w: key path %q in JSON %q: %v", ErrNotFound, keyPath, filePath, err)
 	}
 
 	if s, ok := val.(string); ok {

@@ -64,6 +64,89 @@ WITH_EQUALS=foo=bar=baz
 		assert.Equal(t, "foo=bar=baz", val)
 	})
 
+	t.Run("Quoted values, escapes, and inline comments", func(t *testing.T) {
+		r := &KeyValueFileResolver{}
+
+		// Use a raw string literal so we don't double-escape.
+		content := `
+# full-line comment
+A=foo  # trailing comment
+B="value with spaces"
+C='single # not a comment'
+D="has # inside"  # after-quote comment
+E="line1\nline2"  # escaped newline
+F="quote:\" and slash\\"
+G='it\'s ok'
+HASH_NO_SPACE=foo#bar
+HASH_SPACE=foo #bar
+JUSTEXPORT
+export
+Q="trail\\"
+U="a\z b"
+T="a\tb\rc"
+`
+		p := createKeyValueTestFile(t, content)
+
+		val, err := r.Resolve(p + "//A")
+		require.NoError(t, err)
+		assert.Equal(t, "foo", val)
+
+		val, err = r.Resolve(p + "//B")
+		require.NoError(t, err)
+		assert.Equal(t, "value with spaces", val)
+
+		val, err = r.Resolve(p + "//C")
+		require.NoError(t, err)
+		assert.Equal(t, "single # not a comment", val)
+
+		val, err = r.Resolve(p + "//D")
+		require.NoError(t, err)
+		assert.Equal(t, "has # inside", val)
+
+		val, err = r.Resolve(p + "//E")
+		require.NoError(t, err)
+		assert.Equal(t, "line1\nline2", val)
+
+		val, err = r.Resolve(p + "//F")
+		require.NoError(t, err)
+		assert.Equal(t, "quote:\" and slash\\", val)
+
+		val, err = r.Resolve(p + "//G")
+		require.NoError(t, err)
+		assert.Equal(t, "it's ok", val)
+
+		// '#' immediately after value without whitespace should NOT start a comment.
+		val, err = r.Resolve(p + "//HASH_NO_SPACE")
+		require.NoError(t, err)
+		assert.Equal(t, "foo#bar", val)
+
+		// '#' after at least one whitespace IS a comment delimiter.
+		val, err = r.Resolve(p + "//HASH_SPACE")
+		require.NoError(t, err)
+		assert.Equal(t, "foo", val)
+
+		// Lines without '=' or with only 'export' should be ignored (don't crash, don't match).
+		_, err = r.Resolve(p + "//JUSTEXPORT")
+		require.Error(t, err)
+		_, err = r.Resolve(p + "//export")
+		require.Error(t, err)
+
+		// Trailing backslash inside double quotes should be preserved by unescapeDoubleQuoted.
+		val, err = r.Resolve(p + "//Q")
+		require.NoError(t, err)
+		assert.Equal(t, `trail\`, val)
+
+		// Unknown escape sequences drop the backslash but keep the char.
+		val, err = r.Resolve(p + "//U")
+		require.NoError(t, err)
+		assert.Equal(t, "a"+"z b", val) // backslash removed before 'z'
+
+		// \t and \r are handled.
+		val, err = r.Resolve(p + "//T")
+		require.NoError(t, err)
+		assert.Equal(t, "a\tb\rc", val)
+	})
+
 	t.Run("Missing key", func(t *testing.T) {
 		r := &KeyValueFileResolver{}
 		p := createKeyValueTestFile(t, "A=1\n")
@@ -101,7 +184,7 @@ WITH_EQUALS=foo=bar=baz
 		assert.Equal(t, "1", got)
 	})
 
-	t.Run("CRFL", func(t *testing.T) {
+	t.Run("CRLF", func(t *testing.T) {
 		// Ensure Windows CRLF is handled by TrimSpace.
 		r := &KeyValueFileResolver{}
 		content := "A=1\r\nB=2\r\n"
@@ -117,5 +200,33 @@ WITH_EQUALS=foo=bar=baz
 			require.NoError(t, err)
 			assert.Equal(t, "A=1\r\nB=2", all)
 		}
+	})
+
+	t.Run("Whole file strips BOM", func(t *testing.T) {
+		r := &KeyValueFileResolver{}
+		// Note: BOM at the start of the file should be removed for whole-file reads.
+		content := "\uFEFFA=1\nB=2\n"
+		p := createKeyValueTestFile(t, content)
+
+		all, err := r.Resolve(p)
+		require.NoError(t, err)
+		assert.Equal(t, "A=1\nB=2", all)
+	})
+
+	t.Run("Scanner error path (token too long)", func(t *testing.T) {
+		r := &KeyValueFileResolver{}
+
+		// Construct a file with a huge line > 1MB to exceed Scanner max token size (we set max to 1MB).
+		var b strings.Builder
+		b.WriteString("A=1\n")                          // small line first
+		b.WriteString(strings.Repeat("X", 2*1024*1024)) // 2MB single line, no '='
+		b.WriteByte('\n')
+
+		p := createKeyValueTestFile(t, b.String())
+
+		// Ask for a key that doesn't exist so we force the scan to traverse the huge line
+		// and trigger ErrTooLong.
+		_, err := r.Resolve(p + "//ZZZ")
+		require.Error(t, err, "expected scanner to report ErrTooLong for oversized token")
 	})
 }

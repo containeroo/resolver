@@ -1,7 +1,9 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -18,8 +20,18 @@ func (r *YAMLResolver) Resolve(value string) (string, error) {
 	filePath, keyPath := splitFileAndKey(value)
 	filePath = os.ExpandEnv(filePath)
 
+	if strings.TrimSpace(filePath) == "" {
+		return "", fmt.Errorf("%w: empty file path", ErrBadPath)
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("%w: %s", ErrNotFound, filePath)
+		}
+		if errors.Is(err, fs.ErrPermission) {
+			return "", fmt.Errorf("%w: %s", ErrForbidden, filePath)
+		}
 		return "", fmt.Errorf("failed to read YAML file %q: %w", filePath, err)
 	}
 
@@ -42,11 +54,10 @@ func (r *YAMLResolver) Resolve(value string) (string, error) {
 
 	// Bracket-aware path splitting (supports servers.[host=example.org].port).
 	tokens := selector.ParsePath(keyPath)
-
 	// Walk the structure using selector.
 	val, err := selector.Navigate(contentMap, tokens)
 	if err != nil {
-		return "", fmt.Errorf("key path %q not found in YAML %q: %w", keyPath, filePath, err)
+		return "", fmt.Errorf("%w: key path %q in YAML %q: %v", ErrNotFound, keyPath, filePath, err)
 	}
 
 	// Strings are returned as-is; non-strings are re-encoded as YAML (trimmed).

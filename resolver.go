@@ -3,7 +3,6 @@ package resolver
 // Package-level default registry and convenience functions.
 // This preserves the original simple API while allowing advanced users
 // to construct custom registries with NewRegistry/NewDefaultRegistry.
-
 var defaultRegistry = NewDefaultRegistry()
 
 // RegisterResolver adds or replaces a resolver in the default registry.
@@ -38,6 +37,9 @@ func ResolveSlice(values []string) ([]string, error) {
 func ResolveSliceBestEffort(values []string) ([]string, []error) {
 	return defaultRegistry.ResolveSliceBestEffort(values)
 }
+
+// ResolveString replaces ${...} tokens in s using the default registry.
+func ResolveString(s string) (string, error) { return defaultRegistry.ResolveString(s) }
 
 // DefaultRegistry returns the global default registry.
 // Mutating it is safe for concurrent use.

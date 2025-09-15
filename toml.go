@@ -1,7 +1,9 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -18,8 +20,18 @@ func (r *TOMLResolver) Resolve(value string) (string, error) {
 	filePath, keyPath := splitFileAndKey(value)
 	filePath = os.ExpandEnv(filePath)
 
+	if strings.TrimSpace(filePath) == "" {
+		return "", fmt.Errorf("%w: empty file path", ErrBadPath)
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("%w: %s", ErrNotFound, filePath)
+		}
+		if errors.Is(err, fs.ErrPermission) {
+			return "", fmt.Errorf("%w: %s", ErrForbidden, filePath)
+		}
 		return "", fmt.Errorf("failed to read TOML file %q: %w", filePath, err)
 	}
 
@@ -41,7 +53,7 @@ func (r *TOMLResolver) Resolve(value string) (string, error) {
 
 	val, err := selector.Navigate(content, selector.ParsePath(keyPath))
 	if err != nil {
-		return "", fmt.Errorf("key path %q not found in TOML %q: %w", keyPath, filePath, err)
+		return "", fmt.Errorf("%w: key path %q in TOML %q: %v", ErrNotFound, keyPath, filePath, err)
 	}
 
 	if strVal, ok := val.(string); ok {

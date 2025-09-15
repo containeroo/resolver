@@ -1,7 +1,9 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -19,6 +21,13 @@ func (r *INIResolver) Resolve(value string) (string, error) {
 
 	cfg, err := ini.Load(filePath)
 	if err != nil {
+		// ini.Load wraps os.Open errors; try to map to sentinels.
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("%w: %s", ErrNotFound, filePath)
+		}
+		if errors.Is(err, fs.ErrPermission) {
+			return "", fmt.Errorf("%w: %s", ErrForbidden, filePath)
+		}
 		return "", fmt.Errorf("failed to read INI file %q: %w", filePath, err)
 	}
 
@@ -41,16 +50,18 @@ func (r *INIResolver) Resolve(value string) (string, error) {
 		sectionName = parts[0]
 		keyName = strings.Join(parts[1:], ".")
 	}
+	if strings.TrimSpace(keyName) == "" {
+		return "", fmt.Errorf("%w: empty key in %q", ErrBadPath, keyPath)
+	}
 
 	section, err := cfg.GetSection(sectionName)
 	if err != nil {
-		return "", fmt.Errorf("section %q not found in INI %q: %w", sectionName, filePath, err)
+		return "", fmt.Errorf("%w: section %q in %q", ErrNotFound, sectionName, filePath)
 	}
 
-	k := section.Key(keyName)
-	if k == nil || k.String() == "" {
-		return "", fmt.Errorf("key %q not found in section %q of INI %q", keyName, sectionName, filePath)
+	k, err := section.GetKey(keyName)
+	if err != nil {
+		return "", fmt.Errorf("%w: key %q in section %q of %q", ErrNotFound, keyName, sectionName, filePath)
 	}
-
 	return k.String(), nil
 }

@@ -9,7 +9,10 @@ import (
 // Use \${ to emit a literal ${. A bare '$' not followed by '{' is literal.
 // Malformed tokens (missing '}' or empty ${}) return ErrBadPath.
 func (r *Registry) ResolveString(s string) (string, error) {
-	return r.resolveStringDepth(s, 8)
+	r.mu.RLock()
+	depth := r.maxDepth
+	r.mu.RUnlock()
+	return r.resolveStringDepth(s, depth)
 }
 
 func (r *Registry) resolveStringDepth(s string, maxDepth int) (string, error) {

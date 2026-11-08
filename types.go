@@ -49,21 +49,28 @@ const (
 
 // Registry holds an ordered set of (scheme -> Resolver) mappings; it is concurrency-safe.
 type Registry struct {
-	mu      sync.RWMutex
-	order   []string
-	backing map[string]Resolver
-	unknown UnknownSchemePolicy
-	empty   EmptyValuePolicy
+	mu       sync.RWMutex
+	order    []string
+	backing  map[string]Resolver
+	unknown  UnknownSchemePolicy
+	empty    EmptyValuePolicy
+	maxDepth int
 }
 
 // NewRegistry creates an empty Registry.
-func NewRegistry() *Registry {
-	return &Registry{backing: make(map[string]Resolver)}
+func NewRegistry(options ...Option) *Registry {
+	r := &Registry{backing: make(map[string]Resolver), maxDepth: 8}
+	for _, option := range options {
+		if option != nil {
+			option(r)
+		}
+	}
+	return r
 }
 
 // NewDefaultRegistry returns a Registry with built-in resolvers pre-registered.
-func NewDefaultRegistry() *Registry {
-	r := NewRegistry()
+func NewDefaultRegistry(options ...Option) *Registry {
+	r := NewRegistry(options...)
 	r.Register(envPrefix, &EnvResolver{})
 	r.Register(jsonPrefix, &JSONResolver{})
 	r.Register(yamlPrefix, &YAMLResolver{})

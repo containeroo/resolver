@@ -1,220 +1,104 @@
-# Resolver Package
+# Resolver
 
-The `resolver` package provides a flexible and extensible way to resolve configuration values from various sources including environment variables, plain files, `JSON`, `YAML`, `INI`, `TOML`, and key-value files.
-It uses a **prefix-based system** to determine which resolver to use, and returns either the resolved value or an error.
+[github.com/containeroo/resolver](https://github.com/containeroo/resolver) resolves configuration values from environment variables, files, JSON, YAML, INI and TOML with explicit source prefixes. Unknown references pass through unchanged by default.
 
 ## Installation
 
-```bash
-go get github.com/containeroo/resolver/resolver
+```sh
+go get github.com/containeroo/resolver
 ```
 
-## Usage
+## Sources
 
-The primary entry point is the `ResolveVariable` function.
-It takes a string and attempts to resolve it based on its prefix:
-
-- **`env:`** - Environment variables.
-  Example:
-
-  ```text
-  env:PATH
-  ```
-
-  → value of `$PATH`.
-
-- **`file:`** - Simple key-value files. Supports `KEY=VAL` lines, with optional `export` prefixes and `#` comments.
-  Example:
-
-  ```text
-  file:/config/app.txt//USERNAME
-  ```
-
-  → value of `USERNAME` in `app.txt`.
-
-- **`json:`** - JSON files. Supports dot-notation for nested keys and array indexing.
-  Examples:
-
-  ```text
-  json:/config/app.json//server.host
-  json:/config/app.json//servers.0.host
-  json:/config/app.json//servers.[name=api].port
-  ```
-
-- **`yaml:`** - YAML files. Same dot/array/filter notation as JSON.
-  Example:
-
-  ```text
-  yaml:/config/app.yaml//servers.[host=example.org].port
-  ```
-
-- **`ini:`** - INI files. Supports section+key or default section.
-  Examples:
-
-  ```text
-  ini:/config/app.ini//Database.User
-  ini:/config/app.ini//Key1
-  ```
-
-- **`toml:`** - TOML files. Dot-notation for nested keys and array indexing.
-  Example:
-
-  ```text
-  toml:/config/app.toml//server.host
-  ```
-
-- **No prefix** - Returns the value unchanged.
-  Example:
-
-  ```text
-  just-a-literal
-  ```
-
-  → `"just-a-literal"`.
-
-## String interpolation (`ResolveString`)
-
-Interpolate `${...}` tokens inside a larger string and resolve each token with the same rules as `ResolveVariable`.
+| Syntax                                  | Meaning                              |
+| --------------------------------------- | ------------------------------------ |
+| `env:NAME`                              | Environment variable `NAME`          |
+| `file:/path/token`                      | Entire file contents                 |
+| `file:/path/config.env//KEY`            | Value of `KEY` from a key-value file |
+| `json:/path/config.json//service.token` | JSON path                            |
+| `yaml:/path/config.yaml//service.token` | YAML path                            |
+| `ini:/path/config.ini//Section.Key`     | INI key                              |
+| `toml:/path/config.toml//service.token` | TOML key                             |
+| `literal:my:secret`                     | Literal string containing any colon  |
+| `plain-secret`                          | Unprefixed literal, unchanged        |
 
 ```go
-// Replace ${...} tokens using the default registry (up to 8 passes).
-func ResolveString(s string) (string, error)
-
-// Registry method, if you use a custom registry:
-func (*Registry) ResolveString(s string) (string, error)
+value, err := resolver.ResolveVariable("env:MY_TOKEN")
 ```
 
-**Features & rules**
+An unset environment variable returns `ErrNotFound`; **a set-but-empty variable is accepted by default**. The default whole-file resolver trims surrounding whitespace. To preserve whitespace, register a `KeyValueFileResolver` with an explicit `Whitespace` policy.
 
-- `${scheme:...}` tokens are resolved; the `${`...`}` wrapper is removed.
-- `\${` emits a **literal** `"${"` (escape) and is **not** expanded.
-- A bare `$` not followed by `{` is copied literally.
-- Malformed tokens error with `ErrBadPath`:
-
-  - missing closing `}` (e.g., `"${env:HOME"`)
-  - empty token `"${}"`
-
-- Multi-pass expansion: tokens that produce new `${...}` are expanded in subsequent passes (depth limit 8).
-- Unknown schemes follow your registry policy:
-
-  - Default (**PassThrough**): the token's **content** is inserted unchanged (e.g., `"${nosuch:x}" → "nosuch:x"`).
-  - **ErrorOnUnknown**: unknown tokens yield `ErrNotFound`.
-
-**Examples**
+## Registry configuration
 
 ```go
-os.Setenv("USER", "alice")
+r := resolver.NewDefaultRegistry(
+    resolver.WithEmptyValuePolicy(resolver.RejectBlank),
+    resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
+    resolver.WithMaxDepth(8),
+)
 
-s, _ := resolver.ResolveString("db://u=${env:USER}@${json:/cfg/app.json//db.host}")
-// → "db://u=alice@localhost"
-
-s, _ = resolver.ResolveString(`literal \${env:USER}`)
-// → "literal ${env:USER}"
-
-s, _ = resolver.ResolveString("price is $$5 (not a token)")
-// → "price is $$5 (not a token)"
-
-// Multi-pass: a token that expands to another token
-r := resolver.NewRegistry()
-resolver.RegisterResolver("a:", resolver.ResolverFunc(func(_ string) (string, error) { return "${b:x}", nil }))
-resolver.RegisterResolver("b:", resolver.ResolverFunc(func(_ string) (string, error) { return "OK", nil }))
-s, _ = r.ResolveString("s=${a:any}")
-// → "s=OK"
+secret, err := r.ResolveVariable("env:CLOUDFLARE_TOKEN")
 ```
+
+Empty-value policies:
+
+- `AllowEmpty` (default): accepts empty and whitespace-only strings.
+- `RejectEmpty`: rejects only `""`.
+- `RejectBlank`: rejects empty or whitespace-only strings, without trimming valid values.
+
+Rejected empties produce `ErrEmptyValue`. Missing values still produce `ErrNotFound`.
+
+Unknown-scheme policies:
+
+- `PassThrough` (default): leaves unknown schemes unchanged.
+- `ErrorOnUnknown`: rejects inputs starting with an unregistered scheme prefix such as `evn:KEY` or `https:`. Colons embedded in ordinary prose do not count as a scheme. To deliberately use an unknown scheme as a literal, use `literal:https://example.com`.
+
+`NewRegistry(options...)` starts with no registered schemes; `NewDefaultRegistry(options...)` registers the built-in schemes. You can also use `SetEmptyValuePolicy` and `SetUnknownSchemePolicy` on a registry.
+
+To allow only environment and file sources:
+
+```go
+r := resolver.NewRegistry(
+    resolver.WithEmptyValuePolicy(resolver.RejectBlank),
+    resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
+)
+r.Register("env:", &resolver.EnvResolver{})
+r.Register("file:", &resolver.KeyValueFileResolver{Whitespace: resolver.FileTrimNewlines})
+r.Register("literal:", resolver.LiteralResolver{})
+```
+
+### File whitespace policies
+
+- `FileTrimSpace` (default) trims surrounding whitespace, including newlines.
+- `FileTrimNewlines` removes trailing carriage returns and line feeds only.
+- `FilePreserveWhitespace` preserves bytes (excluding any leading UTF-8 BOM).
+
+These policies apply when reading an entire file; key-value file parsing retains its existing whitespace rules. Values are resolved at call time, not watched for changes.
+
+## String interpolation
+
+Use `ResolveString` to interpolate `${scheme:value}` tokens in a string. Expansion can run multiple passes when one resolver produces another expression. The default maximum is eight passes and can be changed with `WithMaxDepth`.
+
+```go
+r := resolver.NewDefaultRegistry()
+r.Register("a:", resolver.ResolverFunc(func(string) (string,error) {return "${b:x}", nil}))
+r.Register("b:", resolver.ResolverFunc(func(string) (string,error) {return "OK", nil}))
+value, err := r.ResolveString("${a:any}")  // "OK"
+```
+
+Escape a token as `\${env:NAME}` to leave it literal, even across multiple expansion passes. Use `ResolveVariable` for whole secret references rather than interpolation; interpolation is designed for assembling larger strings.
 
 ## Batch resolution
 
-When you need to resolve a list of strings (e.g., CLI args, YAML arrays), use the slice helpers. Both preserve order, return a **new** slice, and leave inputs unchanged. Unknown schemes still **pass through** unchanged, just like `ResolveVariable`.
+`ResolveSlice` returns a new slice or stops at the first error. `ResolveSliceBestEffort` attempts all values and returns a new slice plus per-index errors.
 
-### `ResolveSlice` (strict)
-
-```go
-func ResolveSlice(values []string) ([]string, error)
-```
-
-Resolves each element using the default registry. If any element fails, the function **stops at the first error** and returns it. No partial results are returned.
-
-### `ResolveSliceBestEffort`
+## Custom resolvers
 
 ```go
-func ResolveSliceBestEffort(values []string) ([]string, []error)
-```
-
-Attempts to resolve **all** elements and never fails fast. Returns:
-
-- `out`: resolved values (same length as input; failed items are `""`).
-- `errs`: **per-index** errors you can inspect or log.
-
-> Registry methods are also available: `(*Registry).ResolveSlice` and `(*Registry).ResolveSliceBestEffort`.
-
-## Example
-
-```go
-package main
-
-import (
-    "fmt"
-    "log"
-    "os"
-
-    "github.com/containeroo/resolver"
-)
-
-func main() {
-    os.Setenv("MY_VAR", "HelloWorld")
-
-    val, err := resolver.ResolveVariable("env:MY_VAR")
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(val) // Output: HelloWorld
-
-    // Example: resolve a JSON key
-    // File: /config/app.json
-    // {
-    //   "server": {
-    //     "host": "localhost",
-    //     "port": 8080
-    //   }
-    // }
-    host, err := resolver.ResolveVariable("json:/config/app.json//server.host")
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(host) // Output: localhost
-
-    // Interpolation example
-    os.Setenv("USER", "alice")
-    s, err := resolver.ResolveString("db://${env:USER}@${json:/config/app.json//server.host}")
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(s) // db://alice@localhost
-}
-```
-
-## Extensibility
-
-You can register your own resolver schemes at runtime:
-
-```go
-resolver.RegisterResolver("secret:", myCustomResolver)
-```
-
-Resolvers must implement:
-
-```go
-type Resolver interface {
-    Resolve(value string) (string, error)
-}
-```
-
-You can also use the ergonomic adapter:
-
-```go
-resolver.RegisterResolver("secret:", resolver.ResolverFunc(func(v string) (string, error) {
-    return fetchSecret(v), nil
+r := resolver.NewRegistry()
+r.Register("custom:", resolver.ResolverFunc(func(value string) (string, error) {
+    return fetchCustomValue(value)
 }))
 ```
 
-This allows you to plug in custom backends (e.g., Vault, Consul, HTTP endpoints).
+`RegisterResolver` registers on the package's global default registry. `Registry.Register` registers on a specific registry. `DefaultRegistry()` returns the global registry; avoid mutating it when different components need different source restrictions.

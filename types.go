@@ -26,12 +26,13 @@ const (
 )
 
 const (
-	envPrefix  string = "env:"
-	filePrefix string = "file:"
-	iniPrefix  string = "ini:"
-	jsonPrefix string = "json:"
-	tomlPrefix string = "toml:"
-	yamlPrefix string = "yaml:"
+	envPrefix     string = "env:"
+	filePrefix    string = "file:"
+	iniPrefix     string = "ini:"
+	jsonPrefix    string = "json:"
+	tomlPrefix    string = "toml:"
+	yamlPrefix    string = "yaml:"
+	literalPrefix string = "literal:"
 )
 
 // EmptyValuePolicy controls whether zero-length or whitespace-only values are accepted.
@@ -69,6 +70,7 @@ func NewDefaultRegistry() *Registry {
 	r.Register(iniPrefix, &INIResolver{})
 	r.Register(filePrefix, &KeyValueFileResolver{})
 	r.Register(tomlPrefix, &TOMLResolver{})
+	r.Register(literalPrefix, &LiteralResolver{})
 	return r
 }
 
@@ -125,8 +127,8 @@ func (r *Registry) ResolveVariable(value string) (string, error) {
 	}
 	p := r.unknown
 	r.mu.RUnlock()
-	if p == ErrorOnUnknown && strings.Contains(value, ":") {
-		return "", fmt.Errorf("%w: %q", ErrNotFound, value)
+	if p == ErrorOnUnknown && looksLikeScheme(value) {
+		return "", fmt.Errorf("%w: unknown scheme %q", ErrNotFound, value[:strings.IndexByte(value, ':')])
 	}
 	return validateEmptyValue(value, empty)
 }

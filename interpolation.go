@@ -12,89 +12,62 @@ func (r *Registry) ResolveString(s string) (string, error) {
 	return r.resolveStringDepth(s, 8)
 }
 
-// resolveStringDepth performs up to maxDepth interpolation passes.
-// Each pass scans left-to-right, replacing tokens found in that pass.
 func (r *Registry) resolveStringDepth(s string, maxDepth int) (string, error) {
 	out := s
-
 	for range maxDepth {
 		var b strings.Builder
 		b.Grow(len(out))
-		expanded := false // set to true only when a ${...} token is expanded
-
+		expanded := false
 		for p := 0; p < len(out); {
 			dollarRel := strings.IndexByte(out[p:], '$')
 			if dollarRel < 0 {
-				// no more '$' -> write tail and finish this pass
 				b.WriteString(out[p:])
 				break
 			}
 			dollar := p + dollarRel
-
-			// \${ -> emit "${" (drop the backslash); do NOT mark expanded
 			if isEscapedDollarBrace(out, p, dollar) {
-				b.WriteString(out[p : dollar-1]) // exclude the backslash
+				// Keep the escape until all passes finish so it is never expanded.
+				b.WriteString(out[p:dollar])
 				b.WriteString("${")
-				p = dollar + 2 // skip "\${"
+				p = dollar + 2
 				continue
 			}
-
-			// write up to '$'
 			b.WriteString(out[p:dollar])
-
-			// not a token → literal '$'
 			if !isTokenStart(out, dollar) {
 				b.WriteByte('$')
 				p = dollar + 1
 				continue
 			}
-
-			// ${...} token bounds & validation
 			start, end, err := tokenBounds(out, dollar)
 			if err != nil {
 				return "", err
 			}
 			token := out[start:end]
-
-			// resolve token
 			val, err := r.ResolveVariable(token)
 			if err != nil {
 				return "", fmt.Errorf("resolve ${%s}: %w", token, err)
 			}
-
 			b.WriteString(val)
 			p = end + 1
 			expanded = true
 		}
-
-		// If no ${...} expanded (only literals/escapes handled), return the built string.
 		if !expanded {
-			return b.String(), nil
+			return unescapeExpressions(b.String()), nil
 		}
 		out = b.String()
 	}
-
-	// Max depth reached. If tokens remain, it's a cycle or too-deep nesting.
-	if strings.Contains(out, "${") {
+	if containsUnescapedExpression(out) {
 		return "", fmt.Errorf("%w: interpolation depth exceeded", ErrBadPath)
 	}
-	return out, nil
+	return unescapeExpressions(out), nil
 }
 
-// isEscapedDollarBrace reports whether out has "\${" with '\' immediately before '$'.
 func isEscapedDollarBrace(out string, p, dollar int) bool {
-	return dollar > p && out[dollar-1] == '\\' && // escaped backslash
-		dollar+1 < len(out) && // avoid out-of-bounds
-		out[dollar+1] == '{' // '${' immediately after '\'
+	return dollar > p && out[dollar-1] == '\\' && dollar+1 < len(out) && out[dollar+1] == '{'
 }
-
-// isTokenStart reports whether "$" at index dollar begins a "${...}" token.
 func isTokenStart(out string, dollar int) bool {
-	return dollar+1 < len(out) && // avoid out-of-bounds
-		out[dollar+1] == '{' // '${' immediately after '$'
+	return dollar+1 < len(out) && out[dollar+1] == '{'
 }
-
-// tokenBounds returns [start,end) of the token contents inside "${...}" and validates it.
 func tokenBounds(out string, dollar int) (start, end int, err error) {
 	start = dollar + 2
 	closeRel := strings.IndexByte(out[start:], '}')
@@ -107,3 +80,16 @@ func tokenBounds(out string, dollar int) (start, end int, err error) {
 	}
 	return start, end, nil
 }
+
+// containsUnescapedExpression checks only active interpolation tokens.
+func containsUnescapedExpression(s string) bool {
+	for i := 0; i < len(s)-1; i++ {
+		if s[i] == '$' && s[i+1] == '{' && (i == 0 || s[i-1] != '\\') {
+			return true
+		}
+	}
+	return false
+}
+
+// unescapeExpressions removes the escape only when expansion is complete.
+func unescapeExpressions(s string) string { return strings.ReplaceAll(s, `\${`, `${`) }

@@ -1,7 +1,9 @@
 package selector
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"strconv"
 )
 
@@ -50,7 +52,7 @@ func Navigate(data any, keys []string) (any, error) {
 						continue // field not present
 					}
 					// Compare with coercion-aware equality
-					if equalCoerced(got, want) {
+					if matchesFilter(got, fvRaw, want) {
 						current = elem
 						found = true
 						break
@@ -78,4 +80,22 @@ func Navigate(data any, keys []string) (any, error) {
 		}
 	}
 	return current, nil
+}
+
+func matchesFilter(value any, raw string, coerced any) bool {
+	number, ok := value.(json.Number)
+	if !ok {
+		return equalCoerced(value, coerced)
+	}
+	if number.String() == raw {
+		return true
+	}
+	// Compare numeric spellings such as 1 and 1.0 without rounding large IDs.
+	switch coerced.(type) {
+	case int, float64:
+		left, okLeft := new(big.Rat).SetString(number.String())
+		right, okRight := new(big.Rat).SetString(raw)
+		return okLeft && okRight && left.Cmp(right) == 0
+	}
+	return false
 }

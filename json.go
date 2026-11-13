@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,8 +41,14 @@ func (r *JSONResolver) Resolve(value string) (string, error) {
 	}
 
 	var content map[string]any
-	if err := json.Unmarshal(data, &content); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&content); err != nil {
 		return "", fmt.Errorf("failed to parse JSON in %q: %w", filePath, err)
+	}
+
+	if len(bytes.Trim(data[decoder.InputOffset():], " \t\r\n")) != 0 {
+		return "", fmt.Errorf("failed to parse JSON in %q: unexpected trailing data", filePath)
 	}
 
 	val, err := selector.Navigate(content, selector.ParsePath(keyPath))

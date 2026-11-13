@@ -131,3 +131,20 @@ func TestJSONResolver_Resolve(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestJSONNumberPrecision(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ids.json")
+	data := `{"rows":[{"id":18446744073709551616},{"id":18446744073709551617}]}`
+	require.NoError(t, os.WriteFile(p, []byte(data), 0600))
+	r := &JSONResolver{}
+	for _, path := range []string{"rows.1.id", "rows.[id=18446744073709551617].id", "rows.[id=18446744073709551617.0].id"} {
+		got, err := r.Resolve(p + "//" + path)
+		require.NoError(t, err)
+		require.Equal(t, "18446744073709551617", got)
+	}
+	for _, suffix := range []string{" {}", " garbage", "\u00a0"} {
+		require.NoError(t, os.WriteFile(p, []byte(data+suffix), 0600))
+		_, err := r.Resolve(p + "//rows")
+		require.Error(t, err)
+	}
+}

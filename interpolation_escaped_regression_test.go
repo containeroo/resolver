@@ -1,30 +1,42 @@
 package resolver
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEscapedExpressionsAcrossPasses(t *testing.T) {
 	t.Setenv("RESOLVER_ESC_TEST", "secret")
 	r := NewDefaultRegistry()
-	cases := []struct{ in, want string }{
-		{`literal \${env:RESOLVER_ESC_TEST}`, `literal ${env:RESOLVER_ESC_TEST}`},
-		{`literal \${env:RESOLVER_ESC_TEST} and ${env:RESOLVER_ESC_TEST}`, `literal ${env:RESOLVER_ESC_TEST} and secret`},
-	}
-	for _, tt := range cases {
-		got, err := r.ResolveString(tt.in)
-		if err != nil || got != tt.want {
-			t.Errorf("ResolveString(%q) = (%q,%v), want %q", tt.in, got, err, tt.want)
-		}
-	}
-	// An escaped expression must not count against the depth limit.
-	got, err := r.resolveStringDepth(`\${env:RESOLVER_ESC_TEST} ${env:RESOLVER_ESC_TEST}`, 1)
-	if err != nil || got != `${env:RESOLVER_ESC_TEST} secret` {
-		t.Fatalf("one pass: (%q,%v)", got, err)
-	}
-	r.Register("loop:", ResolverFunc(func(v string) (string, error) { return "${loop:" + v + "}", nil }))
-	if _, err = r.ResolveString("${loop:x}"); !errors.Is(err, ErrBadPath) {
-		t.Fatalf("expected depth error, got %v", err)
-	}
+
+	t.Run("escaped expression", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.ResolveString(`literal \${env:RESOLVER_ESC_TEST}`)
+		require.NoError(t, err)
+		assert.Equal(t, `literal ${env:RESOLVER_ESC_TEST}`, got)
+	})
+
+	t.Run("escaped and active expressions", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.ResolveString(`literal \${env:RESOLVER_ESC_TEST} and ${env:RESOLVER_ESC_TEST}`)
+		require.NoError(t, err)
+		assert.Equal(t, `literal ${env:RESOLVER_ESC_TEST} and secret`, got)
+	})
+
+	t.Run("escaped expression at depth limit", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.resolveStringDepth(`\${env:RESOLVER_ESC_TEST} ${env:RESOLVER_ESC_TEST}`, 1)
+		require.NoError(t, err)
+		assert.Equal(t, `${env:RESOLVER_ESC_TEST} secret`, got)
+	})
+
+	t.Run("recursive expression exceeds depth", func(t *testing.T) {
+		t.Parallel()
+		r := NewRegistry()
+		r.Register("loop:", ResolverFunc(func(v string) (string, error) { return "${loop:" + v + "}", nil }))
+		_, err := r.ResolveString("${loop:x}")
+		assert.ErrorIs(t, err, ErrBadPath)
+	})
 }

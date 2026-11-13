@@ -20,6 +20,8 @@ func createIniTestFile(t *testing.T, content string) string {
 }
 
 func TestINIResolver_Resolve(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RESOLVER_INI_TEST_DIR", dir)
 	t.Run("Whole file", func(t *testing.T) {
 		t.Parallel()
 		r := &INIResolver{}
@@ -115,10 +117,9 @@ Key1=DefaultVal1
 	})
 
 	t.Run("Expands env vars in path", func(t *testing.T) {
+		t.Parallel()
 		r := &INIResolver{}
 
-		dir := t.TempDir()
-		t.Setenv("DIR", dir)
 		p := filepath.Join(dir, "cfg.ini")
 		content := `
 [DEFAULT]
@@ -126,7 +127,7 @@ X=42
 `
 		require.NoError(t, os.WriteFile(p, []byte(content), 0o666))
 
-		val, err := r.Resolve("${DIR}/cfg.ini//X")
+		val, err := r.Resolve("${RESOLVER_INI_TEST_DIR}/cfg.ini//X")
 		require.NoError(t, err)
 		assert.Equal(t, "42", val)
 	})
@@ -173,8 +174,11 @@ Port=8080
 }
 
 func TestINIWholeFileRejectsMalformedSection(t *testing.T) {
-	path := createIniTestFile(t, "[unclosed\nsecret=value\n")
-	value, err := (&INIResolver{}).Resolve(path)
-	require.Error(t, err)
-	require.Empty(t, value)
+	t.Run("rejects malformed section", func(t *testing.T) {
+		t.Parallel()
+		path := createIniTestFile(t, "[unclosed\nsecret=value\n")
+		value, err := (&INIResolver{}).Resolve(path)
+		require.Error(t, err)
+		assert.Empty(t, value)
+	})
 }

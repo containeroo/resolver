@@ -20,7 +20,10 @@ func createKeyValueTestFile(t *testing.T, content string) string {
 }
 
 func TestKeyValueFileResolver_Resolve(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RESOLVER_FILE_TEST_DIR", dir)
 	t.Run("Whole file", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 
 		content := "Key1 = Value1\nKey2=Value2\nKey with spaces =  TrimmedValue\n"
@@ -32,6 +35,7 @@ func TestKeyValueFileResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Specific keys", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 
 		content := `
@@ -65,6 +69,7 @@ WITH_EQUALS=foo=bar=baz
 	})
 
 	t.Run("Quoted values, escapes, and inline comments", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 
 		// Use a raw string literal so we don't double-escape.
@@ -148,6 +153,7 @@ T="a\tb\rc"
 	})
 
 	t.Run("Missing key", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 		p := createKeyValueTestFile(t, "A=1\n")
 
@@ -156,26 +162,27 @@ T="a\tb\rc"
 	})
 
 	t.Run("File not found", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 		_, err := r.Resolve(filepath.Join(t.TempDir(), "nope.txt"))
 		require.Error(t, err)
 	})
 
 	t.Run("Expands env vars in path", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 
-		dir := t.TempDir()
-		t.Setenv("DIR", dir)
 		p := filepath.Join(dir, "env.txt")
 		require.NoError(t, os.WriteFile(p, []byte("X=42\n"), 0o666))
 
 		// exercise os.ExpandEnv on the path
-		val, err := r.Resolve("${DIR}/env.txt//X")
+		val, err := r.Resolve("${RESOLVER_FILE_TEST_DIR}/env.txt//X")
 		require.NoError(t, err)
 		assert.Equal(t, "42", val)
 	})
 
 	t.Run("File scheme", func(t *testing.T) {
+		t.Parallel()
 		content := "A=1\n"
 		p := createKeyValueTestFile(t, content)
 
@@ -185,6 +192,7 @@ T="a\tb\rc"
 	})
 
 	t.Run("CRLF", func(t *testing.T) {
+		t.Parallel()
 		// Ensure Windows CRLF is handled by TrimSpace.
 		r := &KeyValueFileResolver{}
 		content := "A=1\r\nB=2\r\n"
@@ -203,6 +211,7 @@ T="a\tb\rc"
 	})
 
 	t.Run("Whole file strips BOM", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 		// Note: BOM at the start of the file should be removed for whole-file reads.
 		content := "\uFEFFA=1\nB=2\n"
@@ -214,6 +223,7 @@ T="a\tb\rc"
 	})
 
 	t.Run("Scanner error path (token too long)", func(t *testing.T) {
+		t.Parallel()
 		r := &KeyValueFileResolver{}
 
 		// Construct a file with a huge line > 1MB to exceed Scanner max token size (we set max to 1MB).
@@ -236,9 +246,25 @@ func TestQuotedHashesAfterEscapes(t *testing.T) {
 SINGLE='it\'s #1' # trailing comment
 BACKSLASH="ends in \\" # trailing comment`)
 	r := &KeyValueFileResolver{}
-	for key, want := range map[string]string{"DOUBLE": `say "hi #1"`, "SINGLE": "it's #1", "BACKSLASH": `ends in \`} {
-		got, err := r.Resolve(p + "//" + key)
+
+	t.Run("escaped double quote", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.Resolve(p + "//DOUBLE")
 		require.NoError(t, err)
-		require.Equal(t, want, got)
-	}
+		assert.Equal(t, `say "hi #1"`, got)
+	})
+
+	t.Run("escaped single quote", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.Resolve(p + "//SINGLE")
+		require.NoError(t, err)
+		assert.Equal(t, "it's #1", got)
+	})
+
+	t.Run("escaped backslash", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.Resolve(p + "//BACKSLASH")
+		require.NoError(t, err)
+		assert.Equal(t, `ends in \`, got)
+	})
 }

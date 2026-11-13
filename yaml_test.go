@@ -22,6 +22,7 @@ func TestYAMLResolver_Resolve(t *testing.T) {
 	r := &YAMLResolver{}
 
 	t.Run("Whole file", func(t *testing.T) {
+		t.Parallel()
 		content := `server:
   host: localhost
   port: 8080
@@ -44,6 +45,7 @@ nonString:
 	})
 
 	t.Run("Top-level key", func(t *testing.T) {
+		t.Parallel()
 		content := `server:
   host: localhost
   port: 8080
@@ -56,6 +58,7 @@ nonString:
 	})
 
 	t.Run("Nested key", func(t *testing.T) {
+		t.Parallel()
 		content := `server:
   nested:
     key: value
@@ -68,6 +71,7 @@ nonString:
 	})
 
 	t.Run("Array index element", func(t *testing.T) {
+		t.Parallel()
 		content := `servers:
   - host: example.com
     port: 80
@@ -82,6 +86,7 @@ nonString:
 	})
 
 	t.Run("Array filter element", func(t *testing.T) {
+		t.Parallel()
 		// Requires bracket-aware path splitting in yaml.go:
 		// selector.Navigate(contentMap, selector.ParsePath(keyPath))
 		content := `servers:
@@ -100,6 +105,7 @@ nonString:
 	})
 
 	t.Run("Empty string value", func(t *testing.T) {
+		t.Parallel()
 		content := `emptyString: ""`
 		p := createYAMLTestFile(t, content)
 
@@ -109,6 +115,7 @@ nonString:
 	})
 
 	t.Run("Non-string value (encoded)", func(t *testing.T) {
+		t.Parallel()
 		content := `nonString:
   inner: true
 `
@@ -121,6 +128,7 @@ nonString:
 	})
 
 	t.Run("Missing key", func(t *testing.T) {
+		t.Parallel()
 		content := `server:
   nested:
     key: value
@@ -132,11 +140,13 @@ nonString:
 	})
 
 	t.Run("Non-existing file", func(t *testing.T) {
+		t.Parallel()
 		_, err := r.Resolve(filepath.Join(t.TempDir(), "nonexistent.yaml"))
 		require.Error(t, err)
 	})
 
 	t.Run("Invalid YAML", func(t *testing.T) {
+		t.Parallel()
 		p := createYAMLTestFile(t, `key: "unclosed string`)
 		_, err := r.Resolve(p)
 		require.Error(t, err)

@@ -2,62 +2,57 @@ package resolver
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestEnvResolver_Resolve(t *testing.T) {
+	t.Setenv("TEST_ENV_VAR", "test_value")
+	t.Setenv("EMPTY_ENV_VAR", "")
 	r := &EnvResolver{}
 
 	t.Run("existing variable", func(t *testing.T) {
-		t.Setenv("TEST_ENV_VAR", "test_value")
+		t.Parallel()
 		got, err := r.Resolve("TEST_ENV_VAR")
-		if err != nil {
-			t.Fatalf("Resolve(TEST_ENV_VAR) unexpected error: %v", err)
-		}
-		if got != "test_value" {
-			t.Fatalf("Resolve(TEST_ENV_VAR) = %q, want %q", got, "test_value")
-		}
+		require.NoError(t, err)
+		assert.Equal(t, "test_value", got)
 	})
 
 	t.Run("empty variable", func(t *testing.T) {
-		t.Setenv("EMPTY_ENV_VAR", "")
+		t.Parallel()
 		got, err := r.Resolve("EMPTY_ENV_VAR")
-		if err != nil {
-			t.Fatalf("Resolve(EMPTY_ENV_VAR) unexpected error: %v", err)
-		}
-		if got != "" {
-			t.Fatalf("Resolve(EMPTY_ENV_VAR) = %q, want empty string", got)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, "", got)
 	})
 
 	t.Run("missing variable returns error", func(t *testing.T) {
+		t.Parallel()
 		// do not set MISSING_ENV_VAR
-		if _, err := r.Resolve("MISSING_ENV_VAR"); err == nil {
-			t.Fatalf("Resolve(MISSING_ENV_VAR) expected error, got nil")
-		}
+		_, err := r.Resolve("MISSING_ENV_VAR")
+		assert.ErrorIs(t, err, ErrNotFound)
 	})
 }
 
 func TestDefaultRegistry_EnvScheme(t *testing.T) {
 	t.Setenv("FOO", "bar")
-
-	// Uses the package-level default registry via ResolveVariable.
-	got, err := ResolveVariable("env:FOO")
-	if err != nil {
-		t.Fatalf("ResolveVariable(env:FOO) unexpected error: %v", err)
-	}
-	if got != "bar" {
-		t.Fatalf("ResolveVariable(env:FOO) = %q, want %q", got, "bar")
-	}
+	t.Run("resolves environment variable", func(t *testing.T) {
+		t.Parallel()
+		// Uses the package-level default registry via ResolveVariable.
+		got, err := ResolveVariable("env:FOO")
+		require.NoError(t, err)
+		assert.Equal(t, "bar", got)
+	})
 }
 
 func TestDefaultRegistry_NoMatchingSchemePassThrough(t *testing.T) {
-	// No prefix -> should return the input unchanged
-	const in = "plain-literal"
-	got, err := ResolveVariable(in)
-	if err != nil {
-		t.Fatalf("ResolveVariable(%q) unexpected error: %v", in, err)
-	}
-	if got != in {
-		t.Fatalf("ResolveVariable(%q) = %q, want %q", in, got, in)
-	}
+	t.Run("passes literal through", func(t *testing.T) {
+		t.Parallel()
+		// No prefix -> should return the input unchanged
+		const in = "plain-literal"
+		got, err := ResolveVariable(in)
+		require.NoError(t, err)
+		assert.Equal(t, in, got)
+	})
 }

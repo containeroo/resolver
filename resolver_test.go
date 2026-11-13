@@ -38,7 +38,9 @@ func (c *countingResolver) Resolve(v string) (string, error) {
 }
 
 func TestResolveVariable(t *testing.T) {
-	t.Run("PassThroug no prefix", func(t *testing.T) {
+	t.Setenv("HELLO", "world")
+	t.Run("Pass through without prefix", func(t *testing.T) {
+		t.Parallel()
 		const in = "just-a-literal"
 		got, err := ResolveVariable(in)
 		require.NoError(t, err)
@@ -46,6 +48,7 @@ func TestResolveVariable(t *testing.T) {
 	})
 
 	t.Run("Unknown scheme", func(t *testing.T) {
+		t.Parallel()
 		const in = "unknown:foo"
 		got, err := ResolveVariable(in)
 		require.NoError(t, err)
@@ -54,13 +57,14 @@ func TestResolveVariable(t *testing.T) {
 	})
 
 	t.Run("Env", func(t *testing.T) {
-		t.Setenv("HELLO", "world")
+		t.Parallel()
 		got, err := ResolveVariable("env:HELLO")
 		require.NoError(t, err)
 		assert.Equal(t, "world", got)
 	})
 
 	t.Run("Register and resolve custom scheme", func(t *testing.T) {
+		t.Parallel()
 		stub := &stubResolver{}
 		RegisterResolver("test1:", stub)
 
@@ -71,6 +75,7 @@ func TestResolveVariable(t *testing.T) {
 	})
 
 	t.Run("Register replaces existing resolver", func(t *testing.T) {
+		t.Parallel()
 		stub1 := &stubResolver{out: "first"}
 		stub2 := &stubResolver{out: "second"}
 		scheme := "testreplace:"
@@ -89,17 +94,23 @@ func TestResolveVariable(t *testing.T) {
 }
 
 func TestDefaultRegistry(t *testing.T) {
-	t.Run("Register invalid scheme", func(t *testing.T) {
+	t.Run("Register scheme without colon", func(t *testing.T) {
+		t.Parallel()
 		// Missing trailing colon → must panic per contract
 		assert.Panics(t, func() {
 			RegisterResolver("bad", &stubResolver{})
 		})
+	})
+
+	t.Run("Register empty scheme", func(t *testing.T) {
+		t.Parallel()
 		assert.Panics(t, func() {
 			RegisterResolver("", &stubResolver{})
 		})
 	})
 
 	t.Run("Custom resolver error propagates", func(t *testing.T) {
+		t.Parallel()
 		wantErr := errors.New("boom")
 		stub := &stubResolver{err: wantErr}
 		RegisterResolver("testerr:", stub)
@@ -110,6 +121,7 @@ func TestDefaultRegistry(t *testing.T) {
 	})
 
 	t.Run("Returns singleton pointer", func(t *testing.T) {
+		t.Parallel()
 		reg := DefaultRegistry()
 		require.NotNil(t, reg)
 		// Calling again should yield the same pointer
@@ -119,7 +131,9 @@ func TestDefaultRegistry(t *testing.T) {
 }
 
 func TestResolveSlice(t *testing.T) {
+	t.Setenv("HELLO", "world")
 	t.Run("Empty slice returns empty", func(t *testing.T) {
+		t.Parallel()
 		got, err := ResolveSlice(nil)
 		require.NoError(t, err)
 		assert.NotNil(t, got)
@@ -127,10 +141,7 @@ func TestResolveSlice(t *testing.T) {
 	})
 
 	t.Run("Mixed literals, unknown scheme pass-through, and successful resolutions", func(t *testing.T) {
-		// env
-		t.Setenv("HELLO", "world")
-
-		// custom resolvers
+		t.Parallel()
 		RegisterResolver("sliceok:", &stubResolver{}) // returns "stub:<rest>"
 
 		in := []string{
@@ -153,20 +164,21 @@ func TestResolveSlice(t *testing.T) {
 	})
 
 	t.Run("Stops on first error (strict)", func(t *testing.T) {
+		t.Parallel()
 		ok := &countingResolver{prefix: "ok:"}
-		RegisterResolver("sliceok:", ok)
+		RegisterResolver("strictok:", ok)
 
 		wantErr := errors.New("boom")
-		RegisterResolver("sliceerr:", &stubResolver{err: wantErr})
+		RegisterResolver("stricterr:", &stubResolver{err: wantErr})
 
 		// Should stop at index 1, not resolving the last element.
-		in := []string{"sliceok:a", "sliceerr:oops", "sliceok:b"}
+		in := []string{"strictok:a", "stricterr:oops", "strictok:b"}
 
 		got, err := ResolveSlice(in)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, wantErr)
 
-		// Verify short-circuit: only the first "sliceok:" call should have happened.
+		// Verify short-circuit: only the first "strictok:" call should have happened.
 		assert.Equal(t, 1, ok.count, "should stop after the first error")
 		assert.Nil(t, got, "strict resolver should not return partial results")
 	})
@@ -174,6 +186,7 @@ func TestResolveSlice(t *testing.T) {
 
 func TestResolveSliceBestEffort(t *testing.T) {
 	t.Run("Empty slice returns empty outputs and no errors", func(t *testing.T) {
+		t.Parallel()
 		out, errs := ResolveSliceBestEffort(nil)
 		assert.NotNil(t, out)
 		assert.Len(t, out, 0)
@@ -181,19 +194,20 @@ func TestResolveSliceBestEffort(t *testing.T) {
 	})
 
 	t.Run("Collects errors but resolves the rest; unknown schemes pass through", func(t *testing.T) {
+		t.Parallel()
 		ok := &countingResolver{prefix: "ok:"}
-		RegisterResolver("sliceok:", ok)
+		RegisterResolver("bestok:", ok)
 
 		wantErr := errors.New("kaput")
-		RegisterResolver("sliceerr:", &stubResolver{err: wantErr})
+		RegisterResolver("besterr:", &stubResolver{err: wantErr})
 
 		in := []string{
-			"sliceok:a",    // success
-			"sliceerr:x",   // error
+			"bestok:a",     // success
+			"besterr:x",    // error
 			"unknown:zzz",  // unknown → unchanged
-			"sliceok:b",    // success
+			"bestok:b",     // success
 			"just-literal", // unchanged
-			"sliceerr:y",   // error
+			"besterr:y",    // error
 		}
 
 		out, errs := ResolveSliceBestEffort(in)
@@ -214,6 +228,6 @@ func TestResolveSliceBestEffort(t *testing.T) {
 		assert.ErrorIs(t, errs[1], wantErr)
 
 		// Best-effort should process all resolvable items.
-		assert.Equal(t, 2, ok.count, "both sliceok:* entries should be resolved")
+		assert.Equal(t, 2, ok.count, "both bestok:* entries should be resolved")
 	})
 }

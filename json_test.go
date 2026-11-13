@@ -37,6 +37,7 @@ func createJSONTestFile(t *testing.T) string {
 
 func TestJSONResolver_Resolve(t *testing.T) {
 	t.Run("Whole file", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
 
@@ -62,6 +63,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Top level key", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
 
@@ -71,6 +73,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Nested key", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
 
@@ -80,6 +83,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Array index", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
 
@@ -89,6 +93,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Array filter", func(t *testing.T) {
+		t.Parallel()
 		// Uses the selector filter form: [key=value]
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
@@ -100,6 +105,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Empty string value", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
 
@@ -109,6 +115,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Non-string value encoded", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
 
@@ -118,6 +125,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("Missing key", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		p := createJSONTestFile(t)
 
@@ -126,6 +134,7 @@ func TestJSONResolver_Resolve(t *testing.T) {
 	})
 
 	t.Run("File not found", func(t *testing.T) {
+		t.Parallel()
 		r := &JSONResolver{}
 		_, err := r.Resolve(filepath.Join(t.TempDir(), "nonexistent.json"))
 		require.Error(t, err)
@@ -137,14 +146,49 @@ func TestJSONNumberPrecision(t *testing.T) {
 	data := `{"rows":[{"id":18446744073709551616},{"id":18446744073709551617}]}`
 	require.NoError(t, os.WriteFile(p, []byte(data), 0600))
 	r := &JSONResolver{}
-	for _, path := range []string{"rows.1.id", "rows.[id=18446744073709551617].id", "rows.[id=18446744073709551617.0].id"} {
-		got, err := r.Resolve(p + "//" + path)
+
+	t.Run("index preserves integer", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.Resolve(p + "//rows.1.id")
 		require.NoError(t, err)
-		require.Equal(t, "18446744073709551617", got)
-	}
-	for _, suffix := range []string{" {}", " garbage", "\u00a0"} {
-		require.NoError(t, os.WriteFile(p, []byte(data+suffix), 0600))
-		_, err := r.Resolve(p + "//rows")
+		assert.Equal(t, "18446744073709551617", got)
+	})
+
+	t.Run("integer filter", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.Resolve(p + "//rows.[id=18446744073709551617].id")
+		require.NoError(t, err)
+		assert.Equal(t, "18446744073709551617", got)
+	})
+
+	t.Run("decimal filter", func(t *testing.T) {
+		t.Parallel()
+		got, err := r.Resolve(p + "//rows.[id=18446744073709551617.0].id")
+		require.NoError(t, err)
+		assert.Equal(t, "18446744073709551617", got)
+	})
+
+	t.Run("second document", func(t *testing.T) {
+		t.Parallel()
+		invalid := filepath.Join(t.TempDir(), "invalid.json")
+		require.NoError(t, os.WriteFile(invalid, []byte(data+" {}"), 0600))
+		_, err := r.Resolve(invalid + "//rows")
 		require.Error(t, err)
-	}
+	})
+
+	t.Run("trailing text", func(t *testing.T) {
+		t.Parallel()
+		invalid := filepath.Join(t.TempDir(), "invalid.json")
+		require.NoError(t, os.WriteFile(invalid, []byte(data+" garbage"), 0600))
+		_, err := r.Resolve(invalid + "//rows")
+		require.Error(t, err)
+	})
+
+	t.Run("trailing nonbreaking space", func(t *testing.T) {
+		t.Parallel()
+		invalid := filepath.Join(t.TempDir(), "invalid.json")
+		require.NoError(t, os.WriteFile(invalid, []byte(data+"\u00a0"), 0600))
+		_, err := r.Resolve(invalid + "//rows")
+		require.Error(t, err)
+	})
 }

@@ -22,6 +22,7 @@ func TestTOMLResolver_Resolve(t *testing.T) {
 	r := &TOMLResolver{}
 
 	t.Run("Whole file", func(t *testing.T) {
+		t.Parallel()
 		content := `emptyString = ""
 
 [server]
@@ -49,6 +50,7 @@ inner = true
 	})
 
 	t.Run("Top-level key", func(t *testing.T) {
+		t.Parallel()
 		content := `
 [server]
 host = "localhost"
@@ -62,6 +64,7 @@ port = 8080
 	})
 
 	t.Run("Nested key", func(t *testing.T) {
+		t.Parallel()
 		content := `
 [server]
 host = "localhost"
@@ -76,6 +79,7 @@ key = "value"
 	})
 
 	t.Run("Array index element", func(t *testing.T) {
+		t.Parallel()
 		content := `
 [[servers]]
 host = "example.com"
@@ -93,6 +97,7 @@ port = 443
 	})
 
 	t.Run("Array filter element", func(t *testing.T) {
+		t.Parallel()
 		// Ensures bracket-aware path parsing works (servers.[host=example.org].port)
 		content := `
 [[servers]]
@@ -112,6 +117,7 @@ port = 443
 	})
 
 	t.Run("Empty string value", func(t *testing.T) {
+		t.Parallel()
 		content := `emptyString = ""`
 		p := createTOMLTestFile(t, content)
 
@@ -121,6 +127,7 @@ port = 443
 	})
 
 	t.Run("Non-string value (encoded)", func(t *testing.T) {
+		t.Parallel()
 		content := `
 [nonString]
 inner = true
@@ -134,6 +141,7 @@ inner = true
 	})
 
 	t.Run("Missing key", func(t *testing.T) {
+		t.Parallel()
 		content := `
 [server]
 host = "localhost"
@@ -145,11 +153,13 @@ host = "localhost"
 	})
 
 	t.Run("Non-existing file", func(t *testing.T) {
+		t.Parallel()
 		_, err := r.Resolve(filepath.Join(t.TempDir(), "nonexistent.toml"))
 		require.Error(t, err)
 	})
 
 	t.Run("Invalid TOML", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		bad := filepath.Join(dir, "bad.toml")
 		require.NoError(t, os.WriteFile(bad, []byte("= invalid"), 0o666))

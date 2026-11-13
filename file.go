@@ -103,9 +103,18 @@ func parseKV(line string) (k, v string, ok bool) {
 }
 func cutInlineCommentUnquoted(s string) string {
 	inSingle, inDouble := false, false
+	escaped := false
 	seenSpace := true
 	for i, r := range s {
+		if escaped {
+			escaped = false
+			seenSpace = false
+			continue
+		}
 		switch r {
+		case '\\':
+			// Double quotes allow backslash escapes. Single quotes only escape an apostrophe.
+			escaped = inDouble || (inSingle && strings.HasPrefix(s[i+1:], "'"))
 		case '\'':
 			if !inDouble {
 				inSingle = !inSingle

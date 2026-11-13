@@ -230,3 +230,15 @@ T="a\tb\rc"
 		require.Error(t, err, "expected scanner to report ErrTooLong for oversized token")
 	})
 }
+
+func TestQuotedHashesAfterEscapes(t *testing.T) {
+	p := createKeyValueTestFile(t, `DOUBLE="say \"hi #1\"" # trailing comment
+SINGLE='it\'s #1' # trailing comment
+BACKSLASH="ends in \\" # trailing comment`)
+	r := &KeyValueFileResolver{}
+	for key, want := range map[string]string{"DOUBLE": `say "hi #1"`, "SINGLE": "it's #1", "BACKSLASH": `ends in \`} {
+		got, err := r.Resolve(p + "//" + key)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+}

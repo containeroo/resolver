@@ -171,3 +171,10 @@ Port=8080
 		}
 	})
 }
+
+func TestINIWholeFileRejectsMalformedSection(t *testing.T) {
+	path := createIniTestFile(t, "[unclosed\nsecret=value\n")
+	value, err := (&INIResolver{}).Resolve(path)
+	require.Error(t, err)
+	require.Empty(t, value)
+}

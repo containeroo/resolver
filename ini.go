@@ -17,17 +17,17 @@ func (r *INIResolver) Resolve(value string) (string, error) {
 	filePath, keyPath := splitFileAndKey(value)
 	filePath = os.ExpandEnv(filePath)
 
-	cfg, err := ini.Load(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", classifyFileError(fmt.Errorf("failed to read INI file %q: %w", filePath, err))
 	}
 
+	cfg, err := ini.Load(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse INI file %q: %w", filePath, err)
+	}
+
 	if keyPath == "" {
-		// No key path means return the entire INI file
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return "", classifyFileError(fmt.Errorf("failed to read INI file %q: %w", filePath, err))
-		}
 		return strings.TrimSpace(string(data)), nil
 	}
 

@@ -1,9 +1,7 @@
 package resolver
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strings"
 
@@ -26,13 +24,7 @@ func (r *TOMLResolver) Resolve(value string) (string, error) {
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("%w: %s", ErrNotFound, filePath)
-		}
-		if errors.Is(err, fs.ErrPermission) {
-			return "", fmt.Errorf("%w: %s", ErrForbidden, filePath)
-		}
-		return "", fmt.Errorf("failed to read TOML file %q: %w", filePath, err)
+		return "", classifyFileError(fmt.Errorf("failed to read TOML file %q: %w", filePath, err))
 	}
 
 	var content map[string]any

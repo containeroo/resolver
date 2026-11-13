@@ -1,9 +1,7 @@
 package resolver
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strings"
 
@@ -21,21 +19,14 @@ func (r *INIResolver) Resolve(value string) (string, error) {
 
 	cfg, err := ini.Load(filePath)
 	if err != nil {
-		// ini.Load wraps os.Open errors; try to map to sentinels.
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("%w: %s", ErrNotFound, filePath)
-		}
-		if errors.Is(err, fs.ErrPermission) {
-			return "", fmt.Errorf("%w: %s", ErrForbidden, filePath)
-		}
-		return "", fmt.Errorf("failed to read INI file %q: %w", filePath, err)
+		return "", classifyFileError(fmt.Errorf("failed to read INI file %q: %w", filePath, err))
 	}
 
 	if keyPath == "" {
 		// No key path means return the entire INI file
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			return "", fmt.Errorf("failed to read INI file %q: %w", filePath, err)
+			return "", classifyFileError(fmt.Errorf("failed to read INI file %q: %w", filePath, err))
 		}
 		return strings.TrimSpace(string(data)), nil
 	}

@@ -40,7 +40,7 @@ func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
 	}
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file %q: %w", filePath, err)
+		return "", classifyFileError(fmt.Errorf("failed to open file %q: %w", filePath, err))
 	}
 	defer file.Close() // nolint:errcheck
 	if keyPath != "" {
@@ -48,7 +48,7 @@ func (f *KeyValueFileResolver) Resolve(value string) (string, error) {
 	}
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file %q: %w", filePath, err)
+		return "", classifyFileError(fmt.Errorf("failed to read file %q: %w", filePath, err))
 	}
 	content := stripBOM(string(data))
 	switch f.Whitespace {
@@ -74,7 +74,7 @@ func searchKeyInFile(file *os.File, key string) (string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed scanning file %q: %w", file.Name(), err)
+		return "", classifyFileError(fmt.Errorf("failed scanning file %q: %w", file.Name(), err))
 	}
 	return "", fmt.Errorf("%w: key %q in %q", ErrNotFound, key, file.Name())
 }

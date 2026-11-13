@@ -1,9 +1,7 @@
 package resolver
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strings"
 
@@ -26,13 +24,7 @@ func (r *YAMLResolver) Resolve(value string) (string, error) {
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("%w: %s", ErrNotFound, filePath)
-		}
-		if errors.Is(err, fs.ErrPermission) {
-			return "", fmt.Errorf("%w: %s", ErrForbidden, filePath)
-		}
-		return "", fmt.Errorf("failed to read YAML file %q: %w", filePath, err)
+		return "", classifyFileError(fmt.Errorf("failed to read YAML file %q: %w", filePath, err))
 	}
 
 	// Parse YAML into a generic structure (map[string]any / []any / scalars).

@@ -134,8 +134,10 @@ func (r *Registry) ResolveVariable(value string) (string, error) {
 	}
 	p := r.unknown
 	r.mu.RUnlock()
-	if p == ErrorOnUnknown && looksLikeScheme(value) {
-		return "", fmt.Errorf("%w: unknown scheme %q", ErrNotFound, value[:strings.IndexByte(value, ':')])
+	if p == ErrorOnUnknown {
+		if name := schemeName(value); name != "" {
+			return "", fmt.Errorf("%w: unknown scheme %q", ErrNotFound, name)
+		}
 	}
 	return validateEmptyValue(value, empty)
 }

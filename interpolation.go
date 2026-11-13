@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// ResolveString replaces ${...} tokens in s using the registry (max 8 passes).
+// ResolveString replaces ${...} tokens in s using the registry (default 8 passes).
 // Use \${ to emit a literal ${. A bare '$' not followed by '{' is literal.
 // Malformed tokens (missing '}' or empty ${}) return ErrBadPath.
 func (r *Registry) ResolveString(s string) (string, error) {
@@ -18,6 +18,9 @@ func (r *Registry) ResolveString(s string) (string, error) {
 func (r *Registry) resolveStringDepth(s string, maxDepth int) (string, error) {
 	out := s
 	for range maxDepth {
+		if !strings.Contains(out, "${") {
+			return out, nil
+		}
 		var b strings.Builder
 		b.Grow(len(out))
 		expanded := false

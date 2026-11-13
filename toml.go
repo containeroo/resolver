@@ -35,13 +35,6 @@ func (r *TOMLResolver) Resolve(value string) (string, error) {
 		return "", fmt.Errorf("failed to read TOML file %q: %w", filePath, err)
 	}
 
-	// Validate TOML syntax by decoding
-	var validationTarget struct{}
-	if err := toml.Unmarshal(data, &validationTarget); err != nil {
-		return "", fmt.Errorf("failed to parse TOML in %q: %w", filePath, err)
-	}
-
-	// Decode into navigable structure
 	var content map[string]any
 	if err := toml.Unmarshal(data, &content); err != nil {
 		return "", fmt.Errorf("failed to parse TOML in %q: %w", filePath, err)
@@ -60,10 +53,21 @@ func (r *TOMLResolver) Resolve(value string) (string, error) {
 		return strVal, nil
 	}
 
-	tomlVal, err := toml.Marshal(val)
-	if err != nil {
+	// Tables can stand alone as documents. Other values need an assignment
+	// so the encoder can format arrays, numbers and dates as TOML literals.
+	var encoded strings.Builder
+	encoder := toml.NewEncoder(&encoded)
+	_, table := val.(map[string]any)
+	if !table {
+		val = map[string]any{"value": val}
+		encoder.SetTablesInline(true)
+	}
+	if err := encoder.Encode(val); err != nil {
 		return "", fmt.Errorf("failed to encode TOML value: %w", err)
 	}
-
-	return strings.TrimSpace(string(tomlVal)), nil
+	result := strings.TrimSpace(encoded.String())
+	if !table {
+		result = strings.TrimPrefix(result, "value = ")
+	}
+	return result, nil
 }

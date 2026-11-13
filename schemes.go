@@ -1,30 +1,31 @@
 package resolver
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
-// looksLikeScheme recognizes an RFC 3986 scheme prefix at the beginning of a value.
-// Colons in ordinary prose do not imply a scheme.
-func looksLikeScheme(value string) bool {
-	idx := strings.IndexByte(value, ':')
-	if idx <= 0 {
-		return false
+// schemeName returns the RFC 3986 scheme at the start of value, or "" for a
+// literal. Whitespace immediately after the colon identifies ordinary prose.
+func schemeName(value string) string {
+	name, rest, found := strings.Cut(value, ":")
+	if !found || name == "" || !isASCIILetter(name[0]) {
+		return ""
 	}
-	// A colon followed by whitespace is prose, not a reference.
-	if idx+1 < len(value) && (value[idx+1] == ' ' || value[idx+1] == '\t') {
-		return false
-	}
-	for i := 0; i < idx; i++ {
-		c := value[i]
-		letter := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-		if i == 0 {
-			if !letter {
-				return false
-			}
-			continue
-		}
-		if !letter && !(c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.') {
-			return false
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if !isASCIILetter(c) && !(c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.') {
+			return ""
 		}
 	}
-	return true
+	first, _ := utf8.DecodeRuneInString(rest)
+	if unicode.IsSpace(first) {
+		return ""
+	}
+	return name
+}
+
+func isASCIILetter(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }

@@ -8,13 +8,13 @@ import (
 func TestStrictSchemesAndLiteral(t *testing.T) {
 	r := NewDefaultRegistry()
 	r.SetUnknownSchemePolicy(ErrorOnUnknown)
-	for _, input := range []string{"evn:TOKEN", "https://example.com", "my:secret"} {
+	for _, input := range []string{"evn:TOKEN", "https://example.com", "my:secret", "X1+.-:", "a:b:c"} {
 		_, err := r.ResolveVariable(input)
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("%q: got %v, want ErrNotFound", input, err)
 		}
 	}
-	for _, input := range []string{"message: after a space", "some text: here", ":strange", "123:abc"} {
+	for _, input := range []string{"message: after a space", "some text: here", ":strange", "123:abc", "a_b:c", "aé:b", "a:\nnext line", "a:\u00a0word"} {
 		got, err := r.ResolveVariable(input)
 		if err != nil || got != input {
 			t.Errorf("%q: got (%q,%v), want pass-through", input, got, err)

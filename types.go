@@ -29,6 +29,7 @@ const (
 const (
 	envPrefix     string = "env:"
 	filePrefix    string = "file:"
+	secretPrefix  string = "secret:"
 	iniPrefix     string = "ini:"
 	jsonPrefix    string = "json:"
 	tomlPrefix    string = "toml:"
@@ -77,6 +78,7 @@ func NewDefaultRegistry(options ...Option) *Registry {
 	r.Register(yamlPrefix, &YAMLResolver{})
 	r.Register(iniPrefix, &INIResolver{})
 	r.Register(filePrefix, &KeyValueFileResolver{})
+	r.Register(secretPrefix, &SecretResolver{})
 	r.Register(tomlPrefix, &TOMLResolver{})
 	r.Register(literalPrefix, &LiteralResolver{})
 	return r

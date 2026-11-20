@@ -13,6 +13,7 @@ go get github.com/containeroo/resolver
 | Syntax                                  | Meaning                              |
 | --------------------------------------- | ------------------------------------ |
 | `env:NAME`                              | Environment variable `NAME`          |
+| `secret:/run/secrets/token`             | Whole secret file, trailing CR/LF removed |
 | `file:/path/token`                      | Entire file contents                 |
 | `file:/path/config.env//KEY`            | Value of `KEY` from a key-value file |
 | `json:/path/config.json//service.token` | JSON path                            |
@@ -77,17 +78,15 @@ These policies apply when reading an entire file; key-value file parsing retains
 
 ### Mounted Kubernetes secrets
 
-Read a mounted secret as a whole file, without a `//KEY` selector. Use `FileTrimNewlines` to remove trailing LF or CRLF line endings while preserving leading and trailing spaces in the secret:
+Use `secret:` to read a mounted secret as a whole file and remove trailing LF or CRLF line endings. Leading and trailing spaces, tabs, internal newlines, and all other bytes are preserved:
 
 ```go
-r := resolver.NewDefaultRegistry()
-r.Register("file:", &resolver.KeyValueFileResolver{
-    Whitespace: resolver.FileTrimNewlines,
-})
-value, err := r.ResolveVariable("file:/var/run/secrets/my-app/token")
+value, err := resolver.ResolveVariable("secret:/var/run/secrets/my-app/token")
 ```
 
-This reads the mounted file directly; it does not contact the Kubernetes API or decode base64. Use `FilePreserveWhitespace` if trailing newlines are part of the secret. The default `file:` resolver already removes newlines with `FileTrimSpace`, which also removes surrounding spaces and tabs.
+`secret:` is registered by default and appears in `Prefixes()`. Paths support environment variables, for example `secret:${SECRETS_DIR}/token`. An empty path returns `ErrBadPath`; a missing file returns an error matching `ErrNotFound`. Empty contents are governed by the registry's empty-value policy.
+
+This source works with Kubernetes, Docker, and other mounted secret files. It reads the whole file directly without key selectors, Kubernetes API access, or base64 decoding. Values are read again on each resolution call. If trailing newlines are part of the secret, use `file:` with `FilePreserveWhitespace` instead. The default `file:` resolver uses `FileTrimSpace`, which also removes surrounding spaces and tabs.
 
 ## Discover registered prefixes
 

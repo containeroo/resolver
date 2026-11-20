@@ -15,7 +15,7 @@ func schemeName(value string) string {
 	}
 	for i := 1; i < len(name); i++ {
 		c := name[i]
-		if !isASCIILetter(c) && !(c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.') {
+		if !isASCIILetter(c) && !isASCIIDigit(c) && !isSchemePunctuation(c) {
 			return ""
 		}
 	}
@@ -26,6 +26,17 @@ func schemeName(value string) string {
 	return name
 }
 
+// isASCIILetter reports whether c is an ASCII letter.
 func isASCIILetter(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+// isASCIIDigit reports whether c is an ASCII digit.
+func isASCIIDigit(c byte) bool {
+	return c >= '0' && c <= '9'
+}
+
+// isSchemePunctuation reports whether c is '+', '-', or '.', as allowed in a URI scheme.
+func isSchemePunctuation(c byte) bool {
+	return c == '+' || c == '-' || c == '.'
 }

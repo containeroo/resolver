@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -115,6 +116,28 @@ func (r *Registry) Schemes() []string {
 	out := make([]string, len(r.order))
 	copy(out, r.order)
 	return out
+}
+
+// Prefixes returns a sorted copy of all currently registered prefixes, including custom resolvers.
+// Unlike Schemes, the result is ordered lexicographically rather than by registration.
+func (r *Registry) Prefixes() []string {
+	prefixes := r.Schemes()
+	slices.Sort(prefixes)
+	return prefixes
+}
+
+// CanResolve reports whether value starts with a currently registered prefix.
+// It follows ResolveVariable's case-sensitive prefix matching without invoking a resolver.
+// It does not validate the reference or guarantee that resolution will succeed.
+func (r *Registry) CanResolve(value string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, prefix := range r.order {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // ResolveVariable resolves value using the first matching scheme.

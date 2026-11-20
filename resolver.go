@@ -46,3 +46,11 @@ func ResolveString(s string) (string, error) { return defaultRegistry.ResolveStr
 func DefaultRegistry() *Registry {
 	return defaultRegistry
 }
+
+// Prefixes returns a sorted copy of the default registry's currently registered prefixes.
+// It includes custom resolvers added with RegisterResolver.
+func Prefixes() []string { return defaultRegistry.Prefixes() }
+
+// CanResolve reports whether value starts with a prefix registered in the default registry.
+// It does not invoke the resolver or validate the referenced resource.
+func CanResolve(value string) bool { return defaultRegistry.CanResolve(value) }
